@@ -7,7 +7,7 @@ npm run typecheck
 npm run test:simulation
 npm run build
 
-`validate` checks the repository line budget, balanced delimiters, required entry points, and relative imports. `typecheck` checks all TypeScript sources. `test:simulation` bundles the actual TypeScript simulation for Node and exercises high-speed collisions, serve bounce order, AI racket contact, and rally scoring. Run `npm ci` before these checks.
+`validate` checks the repository line budget, balanced delimiters, required entry points, and relative imports. `typecheck` checks all TypeScript sources. `test:simulation` bundles the actual TypeScript simulation for Node and exercises high-speed collisions, two contacts in time order within one tick, moving paddle contact on both faces, predictor landing accuracy, serve bounce order, AI racket contact, rally scoring, and restart during a toss. Run `npm ci` before these checks.
 
 ## Physics checks
 

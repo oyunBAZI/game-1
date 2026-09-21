@@ -43,12 +43,13 @@ export class EnvironmentDetail {
   }
 
   private addBenches(materials: MaterialPalette): void {
-    for (const z of [-3.9, 3.9]) {
+    for (const x of [-4.8, 4.8]) {
+      const z = -1.8;
       const bench = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.12, 0.42), materials.wood);
-      bench.position.set(0, 0.65, z);
+      bench.position.set(x, 0.65, z);
       bench.castShadow = true;
       const legs = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.55, 0.08), materials.metal);
-      legs.position.set(0, 0.34, z);
+      legs.position.set(x, 0.34, z);
       this.group.add(bench, legs);
     }
   }
@@ -67,6 +68,7 @@ export class EnvironmentDetail {
         leaf.position.set(Math.cos(index) * 0.2, 0.65 + (index % 3) * 0.12, Math.sin(index) * 0.2);
         leaves.add(leaf);
       }
+      leaves.position.set(x, 0, -4.9);
       this.group.add(pot, leaves);
     }
   }

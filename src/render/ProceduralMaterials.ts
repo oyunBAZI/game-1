@@ -25,21 +25,22 @@ function standard(color: number, roughness: number, metalness = 0): THREE.MeshSt
 }
 
 export function createMaterialPalette(): MaterialPalette {
-  const grain = createCanvasNoiseTexture(128);
-  grain.repeat.set(20, 36);
+  const grain = createCanvasNoiseTexture(256);
+  grain.repeat.set(9, 18);
+  grain.anisotropy = 8;
   const floorGrain = grain.clone();
-  floorGrain.repeat.set(55, 70);
+  floorGrain.repeat.set(45, 55);
   floorGrain.needsUpdate = true;
   const table = new THREE.MeshPhysicalMaterial({
-    color: 0x075b7f, roughness: 0.48, metalness: 0.02,
-    clearcoat: 0.18, clearcoatRoughness: 0.68, bumpMap: grain, bumpScale: 0.0015
+    color: 0x06678e, roughness: 0.38, metalness: 0.015,
+    clearcoat: 0.34, clearcoatRoughness: 0.48, bumpMap: grain, bumpScale: 0.00075
   });
   const floor = new THREE.MeshStandardMaterial({
-    color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003
+    color: 0x23333c, roughness: 0.82, bumpMap: floorGrain, bumpScale: 0.002
   });
   return {
     table,
-    tableEdge: standard(0x16272f, 0.43, 0.22),
+    tableEdge: standard(0x142d39, 0.34, 0.18),
     tableLine: new THREE.MeshBasicMaterial({ color: 0xf1f8fb }),
     floor,
     wall: standard(0x101d27, 0.78),

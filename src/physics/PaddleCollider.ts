@@ -6,24 +6,35 @@ import { sweptSpherePlane } from "./CollisionPrimitives";
 import type { BallState, PaddleState } from "./State";
 
 export class PaddleCollider {
-  detect(ball: BallState, paddle: PaddleState): CollisionContact | null {
+  detect(ball: BallState, paddle: PaddleState, startFraction = 0): CollisionContact | null {
     if (!paddle.active) return null;
-    const planePoint = paddle.position;
-    const plane = sweptSpherePlane(ball.previousPosition, ball.position, BALL.radius, {
-      point: planePoint,
-      normal: paddle.normal,
+    // Sweep in the moving blade's frame. Testing against only its final position
+    // misses fast strokes and produces contacts on the wrong side of the rubber.
+    const paddleStart = paddle.previousPosition.clone().lerp(paddle.position, startFraction);
+    const start = ball.previousPosition.clone().sub(paddleStart);
+    const end = ball.position.clone().sub(paddle.position);
+    const motion = end.clone().sub(start);
+    if (motion.lengthSq() < 1e-12) return null;
+    const normal = paddle.normal.clone().normalize();
+    if (motion.dot(normal) > 0) normal.negate();
+    if (start.dot(normal) < ball.radius - 0.002) return null;
+    const plane = sweptSpherePlane(start, end, ball.radius, {
+      point: new Vec3(),
+      normal,
       id: "paddle-" + paddle.side,
       kind: "paddle"
     });
     if (!plane.hit) return null;
-    const local = plane.point.clone().sub(paddle.position);
+    const right = new Vec3(normal.z, 0, -normal.x).normalize();
+    const up = new Vec3().crossVectors(normal, right).normalize();
     const width = PADDLE.faceWidth * 0.5 + PADDLE.collisionPadding;
     const height = PADDLE.faceHeight * 0.5 + PADDLE.collisionPadding;
-    if (Math.abs(local.x) > width || Math.abs(local.y) > height) return null;
+    if (Math.abs(plane.point.dot(right)) > width || Math.abs(plane.point.dot(up)) > height) return null;
+    const paddleAtImpact = paddleStart.lerp(paddle.position, plane.time);
     return {
       kind: "paddle",
       timeOfImpact: plane.time,
-      point: plane.point.toJSON(),
+      point: plane.point.add(paddleAtImpact).toJSON(),
       normal: plane.normal.toJSON(),
       penetration: plane.penetration,
       relativeSpeed: ball.velocity.clone().sub(paddle.velocity).length(),

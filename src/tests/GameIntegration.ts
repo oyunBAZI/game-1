@@ -8,6 +8,7 @@ import { TRAINING_RULES } from "../game/Rules";
 import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
+import { BallPredictor } from "../physics/Predictor";
 import { PlayerVisual } from "../render/Player";
 import { PaddleVisual } from "../render/Paddle";
 import { TableVisual } from "../render/Table";
@@ -49,6 +50,49 @@ function testTableAndNet(): void {
   const lift = new Aerodynamics(world.tuning).forces(ball).magnus.length();
   assert(lift > 0 && lift < ball.mass * 20,
     "ordinary spin should create bounded aerodynamic lift");
+}
+
+function testOrderedContinuousContacts(): void {
+  const world = new PhysicsWorld(new EventBus());
+  const ball = world.state.ball;
+  // The table is hit first; the same fast trajectory reaches the net later
+  // within one fixed tick. Surface check order must not change the outcome.
+  ball.reset(new Vec3(0, TABLE.top + BALL.radius + 0.024, 0.11), new Vec3(0, -12, -30));
+  const result = world.fixedStep(1 / 120);
+  assert(result.contacts.length >= 2, "ball must continue flying after a table bounce");
+  assert(result.contacts[0].kind === "table" && result.contacts[1].kind === "net",
+    "contacts must be resolved by time of impact, not by collider type");
+  assert(ball.velocity.z > 0, "the later net impact must send the ball back");
+
+  const paddle = world.state.paddles.away;
+  paddle.previousPosition.set(0, 1, 0.25);
+  paddle.position.set(0, 1, 0.55);
+  paddle.normal.set(0, 0, 1);
+  ball.reset(new Vec3(0, 1, 0.5));
+  ball.previousPosition.set(0, 1, 0.5);
+  ball.position.set(0, 1, 0.3);
+  assert(world.paddles.detect(ball, paddle)?.kind === "paddle",
+    "the moving blade must catch a ball swept through its earlier position");
+  paddle.normal.negate();
+  assert(world.paddles.detect(ball, paddle)?.kind === "paddle",
+    "both rubber faces must be able to contact the ball");
+}
+
+function testPredictionAgreesWithFlight(): void {
+  const world = new PhysicsWorld(new EventBus());
+  world.state.paddles.home.active = false;
+  world.state.paddles.away.active = false;
+  world.state.ball.reset(new Vec3(0.14, 1.3, 0.5), new Vec3(0.4, 1.2, -2.9));
+  world.state.ball.angularVelocity.set(100, 20, 0);
+  const prediction = new BallPredictor(world.tuning).predict(world.state.ball, 1, 1 / 240);
+  let actual: CollisionContact | undefined;
+  for (let tick = 0; tick < 240 && !actual; tick += 1) {
+    actual = world.fixedStep(1 / 240).contacts.find((hit) => hit.kind === "table");
+  }
+  assert(actual && prediction.valid, "a reachable spinning ball must have a predicted landing");
+  assert(Math.abs(prediction.position.x - actual.point.x) < 0.04 &&
+    Math.abs(prediction.position.z - actual.point.z) < 0.04,
+    "AI landing prediction must agree with the game collision model");
 }
 
 function testRallyScoring(): void {
@@ -123,6 +167,17 @@ function testPlayableSimulation(): void {
   const awayBounces = contacts.filter((hit) => hit.kind === "table");
   assert(awayBounces.length >= 2 && awayBounces[0].point.z < 0 && awayBounces[1].point.z > 0,
     "AI serve must happen automatically and bounce on both halves in reverse order");
+
+  simulation.restart();
+  simulation.setInput({ ...input, serve: true });
+  simulation.fixedUpdate(1 / 240, 401);
+  assert(simulation.match.serve.isActive(), "starting a serve must create an active serve plan");
+  simulation.restart(); // abort a serve while it is still in the toss phase
+  assert(!simulation.match.serve.isActive() && !simulation.match.rally.state.active,
+    "restart must discard the old toss and rally");
+  simulation.setInput({ ...input, serve: true });
+  simulation.fixedUpdate(1 / 240, 402);
+  assert(simulation.match.serve.isActive(), "a fresh serve must be possible immediately after restart");
 }
 
 function testModelConstruction(): void {
@@ -164,6 +219,8 @@ export function runGameTests(): void {
   const pointer = mergeInputFrames(keyboard, { swing: 0, serve: false });
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
   testTableAndNet();
+  testOrderedContinuousContacts();
+  testPredictionAgreesWithFlight();
   testRallyScoring();
   testPlayableSimulation();
   testModelConstruction();

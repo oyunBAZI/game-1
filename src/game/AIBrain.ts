@@ -1,6 +1,6 @@
 import { Random } from "../core/Random";
 import { Vec3 } from "../core/Vec3";
-import { clamp, damp } from "../core/MathUtils";
+import { clamp } from "../core/MathUtils";
 import type { DifficultyProfile, Side } from "../core/types";
 import { BallPredictor, type LandingPrediction } from "../physics/Predictor";
 import type { PhysicsTuning } from "../physics/constants";
@@ -42,14 +42,26 @@ export class AIBrain {
     };
   }
 
-  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState): AIAction {
+  reset(): void {
+    this.reactionTimer = 0;
+    this.prediction = null;
+    this.target.set(0, 1, this.side === "home" ? 1.06 : -1.06);
+    this.lastAction.move.set(0, 0, 0);
+    this.lastAction.paddleTarget.copy(this.target);
+    this.lastAction.paddleNormal.set(0, 0, this.side === "home" ? -1 : 1);
+    this.lastAction.swing = 0;
+    this.lastAction.spin.set(0, 0, 0);
+    this.lastAction.confidence = 0;
+  }
+
+  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState, opponent?: PlayerState): AIAction {
     this.reactionTimer -= dt;
-    if (this.reactionTimer > 0) return this.lastAction;
+    if (this.reactionTimer > 0) return this.track(ball, player, paddle);
     this.reactionTimer = this.profile.reactionSeconds * this.random.range(0.82, 1.18);
     const movingTowardAI = this.side === "home" ? ball.velocity.z > 0 : ball.velocity.z < 0;
     if (!movingTowardAI && ball.position.y < 0.9) {
-      this.lastAction = this.recover(player, paddle, dt);
-      return this.lastAction;
+      this.lastAction = this.recover();
+      return this.track(ball, player, paddle);
     }
     this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
@@ -65,13 +77,9 @@ export class AIBrain {
       clamp(predicted.y + this.random.signed() * this.profile.placementError * 0.4, 0.62, 1.7),
       interceptZ
     );
-    const move = this.target.clone().sub(player.position).setY(0).clampMagnitude(1);
-    const reachable = this.target.distanceTo(paddle.position) < 1.15 + confidence * 0.35;
-    const swing = reachable && movingTowardAI && ball.position.y > 0.5
-      ? clamp(0.25 + this.profile.aggression * 0.8 + ball.speed() / 70, 0, 1)
-      : 0;
+    const opponentLane = opponent ? (opponent.position.x >= 0 ? -0.48 : 0.48) : 0;
     const normal = new Vec3(
-      clamp(-ball.velocity.x * 0.015, -0.45, 0.45),
+      clamp((opponentLane - predicted.x) * 0.2 - ball.velocity.x * 0.015, -0.45, 0.45),
       clamp(0.2 + ball.angularVelocity.x * 0.0008, -0.4, 0.5),
       this.side === "home" ? -1 : 1
     ).normalize();
@@ -81,30 +89,40 @@ export class AIBrain {
       clamp(ball.angularVelocity.z * 0.18, -220, 220)
     );
     this.lastAction = {
-      move,
+      move: new Vec3(),
       paddleTarget: this.target.clone().add(new Vec3(0, 0, depth * 0.1)),
       paddleNormal: normal,
-      swing,
+      swing: 0,
       spin,
       confidence
     };
+    return this.track(ball, player, paddle);
+  }
+
+  private track(ball: BallState, player: PlayerState, paddle: PaddleState): AIAction {
+    // Reaction time delays new predictions, not basic footwork or stroke timing.
+    this.lastAction.move.copy(this.lastAction.paddleTarget).sub(player.position).setY(0).clampMagnitude(1);
+    const toward = this.side === "away" ? ball.velocity.z < 0 : ball.velocity.z > 0;
+    const onSide = this.side === "away" ? ball.position.z < -0.15 : ball.position.z > 0.15;
+    const reachable = this.lastAction.paddleTarget.distanceTo(paddle.position) < 0.55;
+    this.lastAction.swing = toward && onSide && reachable && ball.position.y > 0.52 &&
+      ball.position.distanceTo(paddle.position) < 0.58
+      ? clamp(0.25 + this.profile.aggression * 0.8 + ball.speed() / 70, 0, 1)
+      : 0;
     return this.lastAction;
   }
 
-  private recover(player: PlayerState, paddle: PaddleState, dt: number): AIAction {
+  private recover(): AIAction {
     const target = new Vec3(this.homeBias.x, 1.0, this.side === "home" ? 1.15 : -1.15);
-    const move = target.clone().sub(player.position).setY(0).clampMagnitude(1);
-    const paddleTarget = target.clone().setY(1.0);
     const normal = new Vec3(0, 0, this.side === "home" ? -1 : 1);
-    this.lastAction = {
-      move,
-      paddleTarget,
+    return {
+      move: new Vec3(),
+      paddleTarget: target,
       paddleNormal: normal,
       swing: 0,
       spin: new Vec3(),
       confidence: 0.25
     };
-    return this.lastAction;
   }
 
   predictionPoints(): Vec3[] {
