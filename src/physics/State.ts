@@ -115,7 +115,7 @@ export class PaddleState {
   swingVelocity = new Vec3();
   angularVelocity = new Vec3();
   rotation = new Quat();
-  contactRadius = PADDLE.collisionPadding;
+  contactRadius: number = PADDLE.collisionPadding;
   active = true;
   faceWidth = PADDLE.faceWidth;
   faceHeight = PADDLE.faceHeight;
@@ -138,13 +138,13 @@ export class PaddleState {
   updateKinematics(dt: number): void {
     if (dt <= 0) return;
     this.velocity.copy(this.position).sub(this.previousPosition).divideScalar(dt);
-    this.swingVelocity.copy(this.velocity);
+    // The controller supplies a separate stroke impulse; it must survive this update.
   }
 
   velocityAt(point: Vec3): Vec3 {
     const offset = point.clone().sub(this.position);
     const rotational = new Vec3().crossVectors(this.angularVelocity, offset);
-    return this.velocity.clone().add(rotational);
+    return this.velocity.clone().add(this.swingVelocity).add(rotational);
   }
 
   snapshot(): PaddleSnapshot {

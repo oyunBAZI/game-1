@@ -17,7 +17,7 @@ export class GameApp {
   readonly events = new EventBus(1024);
   readonly logger = new Logger("app");
   readonly config = createDefaultConfig();
-  readonly simulation = new GameSimulation(this.config);
+  readonly simulation = new GameSimulation(this.config, this.events);
   readonly input: InputManager;
   readonly renderer: RenderBridge;
   readonly loop: FixedStepLoop;
@@ -30,6 +30,8 @@ export class GameApp {
   private lastFrame = performance.now();
   private fps = 60;
   private cameraIndex = 0;
+  private inputRaf = 0;
+  private disposed = false;
 
   constructor(private readonly root: HTMLElement) {
     applyGlobalUiStyles();
@@ -44,7 +46,11 @@ export class GameApp {
     this.settings = new SettingsPanel(root, this.config, this.events);
     this.debug = new DebugOverlay(root, this.simulation, this.profiler);
     this.events.on("input:frame", (input) => {
-      if (input.pause) this.menu.toggle();
+      if (input.pause && this.simulation.isRunning()) {
+        this.menu.toggle();
+        if (this.menu.isVisible()) this.simulation.match.pause();
+        else this.simulation.match.resume();
+      }
       if (input.cameraMode) this.cycleCamera();
     });
     this.events.on("match:phase", ({ to }) => {
@@ -65,15 +71,14 @@ export class GameApp {
   }
 
   private animate = (): void => {
+    if (this.disposed) return;
     const now = performance.now();
     const dt = Math.max(0.001, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     this.fps = this.fps * 0.92 + (1 / dt) * 0.08;
-    this.profiler.begin("physics");
     const input = this.input.sample(now / 1000);
     this.simulation.setInput(input);
-    this.profiler.end("physics");
-    requestAnimationFrame(this.animate);
+    this.inputRaf = requestAnimationFrame(this.animate);
   };
 
   private cycleCamera(): void {
@@ -83,6 +88,8 @@ export class GameApp {
   }
 
   dispose(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.inputRaf);
     this.loop.dispose();
     this.input.dispose();
     this.hud.dispose();

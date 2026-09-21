@@ -43,7 +43,7 @@ export class Random {
     return values[this.int(0, values.length - 1)];
   }
 
-  weighted<T>(values: readonly Array<{ value: T; weight: number }>): T {
+  weighted<T>(values: ReadonlyArray<{ value: T; weight: number }>): T {
     const total = values.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
     if (total <= 0) return this.pick(values.map((item) => item.value));
     let cursor = this.next() * total;

@@ -24,6 +24,7 @@ export class PhysicsWorld {
   readonly tuning: PhysicsTuning;
   private readonly contacts: CollisionContact[] = [];
   private readonly contactSides = new Set<Side>();
+  private readonly desiredSpin: Record<Side, Vec3> = { home: new Vec3(), away: new Vec3() };
   private lastContactTick = new Map<string, number>();
 
   constructor(
@@ -44,6 +45,13 @@ export class PhysicsWorld {
     this.state.ball.reset();
     this.state.paddles.home.position.set(0, 1, 1);
     this.state.paddles.away.position.set(0, 1, -1);
+    for (const side of ["home", "away"] as Side[]) {
+      this.state.paddles[side].previousPosition.copy(this.state.paddles[side].position);
+      this.state.paddles[side].velocity.set(0, 0, 0);
+      this.state.paddles[side].swingVelocity.set(0, 0, 0);
+      this.state.players[side].velocity.set(0, 0, 0);
+      this.desiredSpin[side].set(0, 0, 0);
+    }
     this.state.players.home.position.set(0, 0, 1.62);
     this.state.players.away.position.set(0, 0, -1.62);
     this.net.reset();
@@ -54,7 +62,7 @@ export class PhysicsWorld {
 
   serve(side: Side, velocity: Vec3, spin = new Vec3()): void {
     const sign = side === "home" ? 1 : -1;
-    const position = new Vec3(0, TABLE.top + 0.42, sign * 0.58);
+    const position = new Vec3(0, TABLE.top + 0.20, sign * 0.62);
     const direction = velocity.clone();
     if (Math.sign(direction.z) === sign || Math.abs(direction.z) < 0.01) direction.z = -sign * Math.abs(direction.z || 4.5);
     this.state.ball.reset(position, direction);
@@ -63,18 +71,29 @@ export class PhysicsWorld {
     this.state.ball.lastContact = null;
   }
 
-  fixedStep(dt: number): PhysicsStepResult {
+  setDesiredSpin(side: Side, spin: Vec3): void {
+    this.desiredSpin[side].copy(spin).clampMagnitude(this.tuning.maxSpinRate);
+  }
+
+  fixedStep(dt: number, controls?: () => void, simulateBall = true): PhysicsStepResult {
     const world = this.state;
     world.beginStep();
+    controls?.();
     this.integrator.integratePlayers(world, dt);
-    this.integrator.integrate(world.ball, dt);
+    for (const paddle of [world.paddles.home, world.paddles.away]) {
+      paddle.velocity.copy(paddle.position).sub(paddle.previousPosition).divideScalar(dt).clampMagnitude(15);
+    }
     this.net.step(dt);
     this.contacts.length = 0;
     this.contactSides.clear();
-    this.detectAndResolvePaddles();
-    this.detectAndResolveNet();
-    this.detectAndResolveTable();
-    const outReason = this.detectOut();
+    let outReason: string | null = null;
+    if (simulateBall) {
+      this.integrator.integrate(world.ball, dt);
+      this.detectAndResolvePaddles();
+      this.detectAndResolveNet();
+      this.detectAndResolveTable();
+      outReason = this.detectOut();
+    }
     world.finishStep(dt);
     for (const contact of this.contacts) this.emitContact(contact);
     return { contacts: [...this.contacts], ballOut: Boolean(outReason), outReason };
@@ -88,9 +107,9 @@ export class PhysicsWorld {
       if (!contact) continue;
       const previousTick = this.lastContactTick.get(contact.surfaceId);
       if (previousTick === this.state.tick) continue;
-      const desiredSpin = new Vec3(0, 0, 0);
-      resolvePaddleContact(ball, paddle, this.tuning.rubber, desiredSpin);
-      ball.position.addScaled(Vec3.from(contact.normal), contact.penetration + 0.0005);
+      resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side]);
+      const normal = Vec3.from(contact.normal);
+      ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
       ball.lastContact = "paddle";
       ball.lastContactSide = side;
       ball.lastHitTick = this.state.tick;
@@ -98,12 +117,6 @@ export class PhysicsWorld {
       this.contacts.push(contact);
       this.contactSides.add(side);
       this.lastContactTick.set(contact.surfaceId, this.state.tick);
-      this.events.emit("shot:hit", {
-        side,
-        kind: "drive",
-        speed: ball.velocity.length(),
-        spin: ball.angularVelocity.toJSON()
-      });
     }
   }
 
@@ -113,9 +126,11 @@ export class PhysicsWorld {
     if (!contact) return;
     const previousTick = this.lastContactTick.get(contact.surfaceId);
     if (previousTick === this.state.tick) return;
-    resolveNetContact(ball, Vec3.from(contact.normal), this.tuning.netRestitution);
-    this.net.applyImpulse(Vec3.from(contact.point), ball.velocity.clone().multiplyScalar(ball.mass * 0.6));
-    ball.position.addScaled(Vec3.from(contact.normal), contact.penetration + 0.0005);
+    const before = ball.velocity.clone();
+    const normal = Vec3.from(contact.normal);
+    resolveNetContact(ball, normal, this.tuning.netRestitution);
+    this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
+    ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
     ball.lastContact = "net";
     ball.contactCount += 1;
     this.contacts.push(contact);
@@ -129,9 +144,9 @@ export class PhysicsWorld {
     const previousTick = this.lastContactTick.get(collision.contact.surfaceId);
     if (previousTick === this.state.tick) return;
     resolveTableBounce(ball, collision.normal, this.tuning.table);
-    ball.position.addScaled(collision.normal, collision.contact.penetration + 0.0005);
+    ball.position.copy(collision.contact.point).addScaled(collision.normal, ball.radius + 0.0005);
     ball.grounded = true;
-    ball.lastContact = collision.surface;
+    ball.lastContact = collision.surface === "top" ? "table" : "edge";
     ball.contactCount += 1;
     this.contacts.push(collision.contact);
     this.lastContactTick.set(collision.contact.surfaceId, this.state.tick);

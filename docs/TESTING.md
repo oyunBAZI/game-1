@@ -3,10 +3,11 @@
 ## Local checks
 
 npm run validate
+npm run typecheck
 npm run test:simulation
 npm run build
 
-validate checks the repository line budget, balanced delimiters, required entry points, and relative import resolution. test:simulation is dependency-free and verifies the core numeric assumptions even before the npm dependency graph is installed.
+`validate` checks the repository line budget, balanced delimiters, required entry points, and relative imports. `typecheck` checks all TypeScript sources. `test:simulation` bundles the actual TypeScript simulation for Node and exercises high-speed collisions, serve bounce order, AI racket contact, and rally scoring. Run `npm ci` before these checks.
 
 ## Physics checks
 

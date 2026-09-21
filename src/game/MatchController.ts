@@ -23,6 +23,9 @@ export class MatchController {
   private initialServer: Side = "home";
   private nextServer: Side = "home";
   private pointDelay = 0;
+  private selectedServe: ServeStyle = "flat";
+  private phaseBeforePause: GamePhase = "serve";
+  private gamesCompleted = 0;
 
   constructor(
     private readonly events: EventBus,
@@ -34,16 +37,12 @@ export class MatchController {
     this.scoreboard = new Scoreboard(events, rules);
     this.rally = new RallyController(events, world, this.scoreboard);
     this.serve = new ServeController(events, world, rules);
-    const context: MatchContext = { mode, phase: "boot", selectedServe: "pendulum" };
+    const context: MatchContext = { mode, phase: "boot", selectedServe: "flat" };
     this.machine = new StateMachine(context);
     this.machine.addMany([
-      { name: "boot", enter: () => this.emitPhase("boot", "menu") },
-      { name: "menu", enter: () => this.emitPhase("menu", "menu") },
-      { name: "serve", enter: () => this.emitPhase("serve", "serve") },
-      { name: "rally", enter: () => this.emitPhase("rally", "rally") },
-      { name: "point", enter: () => this.emitPhase("point", "point") },
-      { name: "paused", enter: () => this.emitPhase("paused", "paused") },
-      { name: "finished", enter: () => this.emitPhase("finished", "finished") }
+      ...(["boot", "menu", "serve", "rally", "point", "paused", "finished"] as GamePhase[])
+        .map((phase) => ({ name: phase, enter: (_: MatchContext, previous: string | null) =>
+          this.events.emit("match:phase", { from: (previous ?? "boot") as GamePhase, to: phase }) }))
     ]);
     this.machine.start("boot");
     this.events.on("rally:end", ({ winner }) => this.onRallyEnd(winner));
@@ -54,11 +53,13 @@ export class MatchController {
     this.initialServer = server;
     this.nextServer = server;
     this.pointDelay = 0;
+    this.gamesCompleted = 0;
     this.machine.transitionTo("serve");
   }
 
   update(dt: number): void {
     if (this.machine.current === "serve") {
+      if (this.nextServer === "away" && !this.serve.isActive()) this.serveNow();
       this.serve.update(dt);
       if (!this.serve.isServing() && this.serve.isActive()) this.machine.transitionTo("rally");
     }
@@ -72,20 +73,24 @@ export class MatchController {
   }
 
   pause(): void {
-    if (this.machine.current !== "paused") this.machine.transitionTo("paused");
+    if (this.machine.current !== "paused") {
+      this.phaseBeforePause = this.phase();
+      this.machine.transitionTo("paused");
+    }
   }
 
   resume(): void {
-    if (this.machine.current === "paused") this.machine.transitionTo(this.rally.state.active ? "rally" : "serve");
+    if (this.machine.current === "paused") this.machine.transitionTo(this.phaseBeforePause);
   }
 
   setServeStyle(style: ServeStyle): void {
-    this.machineContext().selectedServe = style;
+    this.selectedServe = style;
   }
 
   serveNow(): boolean {
     if (this.machine.current !== "serve") return false;
-    const plan = this.serve.begin(this.nextServer, this.machineContext().selectedServe);
+    if (this.serve.isActive()) return false;
+    const plan = this.serve.begin(this.nextServer, this.selectedServe);
     if (!plan.legal) return false;
     return true;
   }
@@ -104,6 +109,10 @@ export class MatchController {
 
   private onRallyEnd(winner: Side): void {
     if (this.machine.current !== "rally" && this.machine.current !== "serve") return;
+    if (this.scoreboard.gamesPlayed > this.gamesCompleted) {
+      this.gamesCompleted = this.scoreboard.gamesPlayed;
+      this.initialServer = this.initialServer === "home" ? "away" : "home";
+    }
     this.nextServer = serviceOwnerForPoint(
       this.initialServer,
       this.scoreboard.pointsPlayed,
@@ -115,15 +124,6 @@ export class MatchController {
     this.machine.transitionTo("point");
     if (this.scoreboard.matchWinner) this.machine.transitionTo("finished");
     this.serve.finishPoint();
-  }
-
-  private emitPhase(from: GamePhase, to: GamePhase): void {
-    const current = this.machine?.current ?? from;
-    this.events.emit("match:phase", { from: current, to });
-  }
-
-  private machineContext(): MatchContext {
-    return (this.machine as any).context as MatchContext;
   }
 
   dispose(): void {

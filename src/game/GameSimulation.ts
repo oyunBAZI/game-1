@@ -20,10 +20,11 @@ export class GameSimulation implements FixedStepParticipant {
   readonly config: GameConfig;
   private input: InputFrame = this.emptyInput();
   private running = false;
+  private pendingServe = false;
 
-  constructor(config: Partial<GameConfig> = {}) {
+  constructor(config: Partial<GameConfig> = {}, events = new EventBus(512)) {
     this.config = { ...createDefaultConfig(), ...config, physics: { ...createDefaultConfig().physics, ...config.physics } };
-    this.events = new EventBus(512);
+    this.events = events;
     this.world = new PhysicsWorld(this.events, {
       gravity: this.config.physics.gravity,
       airDensity: this.config.physics.airDensity,
@@ -55,29 +56,46 @@ export class GameSimulation implements FixedStepParticipant {
   }
 
   start(): void {
-    if (this.running) return;
+    if (this.running && this.match.phase() === "paused") {
+      this.match.resume();
+      return;
+    }
+    if (this.running && this.match.phase() !== "finished") return;
+    this.restart();
+  }
+
+  restart(): void {
     this.running = true;
+    this.pendingServe = false;
     this.world.reset();
     this.match.start("home");
   }
 
   setInput(input: InputFrame): void {
     this.input = { ...input };
-    this.events.emit("input:frame", this.input);
+    this.pendingServe ||= input.serve;
     this.playerController.setInput(this.input);
   }
 
   fixedUpdate(dt: number, tick: number): void {
     if (!this.running) return;
-    this.playerController.update(dt);
-    const aiAction = this.ai.update(dt, this.world.state.ball, this.world.state.players.away, this.world.state.paddles.away);
-    this.world.state.players.away.velocity.copy(aiAction.move).multiplyScalar(this.config.difficulty.movementSpeed);
-    this.world.paddles.away.position.lerp(aiAction.paddleTarget, 1 - Math.exp(-10 * dt));
-    this.world.paddles.away.normal.copy(aiAction.paddleNormal);
-    this.world.paddles.away.swingVelocity.copy(aiAction.move).multiplyScalar(aiAction.swing * 9);
+    if (this.match.phase() === "paused" || this.match.phase() === "finished") return;
     this.match.update(dt);
-    if (this.match.phase() === "serve" && this.input.serve) this.match.serveNow();
-    const result = this.world.fixedStep(dt);
+    if (this.match.phase() === "serve" && this.match.currentServer() === "home" && this.pendingServe) {
+      this.match.serveNow();
+      this.pendingServe = false;
+    }
+    const simulateBall = this.match.phase() === "rally";
+    const result = this.world.fixedStep(dt, () => {
+      this.playerController.update(dt);
+      this.world.setDesiredSpin("home", this.playerController.desiredSpin());
+      const aiAction = this.ai.update(dt, this.world.state.ball, this.world.state.players.away, this.world.state.paddles.away);
+      this.world.state.players.away.velocity.copy(aiAction.move).multiplyScalar(this.config.difficulty.movementSpeed);
+      const paddle = this.world.state.paddles.away;
+      this.world.paddles.placeForInput(paddle, aiAction.paddleTarget, aiAction.paddleNormal, dt, 4 + this.config.difficulty.movementSpeed);
+      paddle.swingVelocity.copy(aiAction.paddleNormal).multiplyScalar(aiAction.swing * 3.5);
+      this.world.setDesiredSpin("away", aiAction.spin);
+    }, simulateBall);
     if (result.ballOut) {
       const lastSide = this.world.state.ball.lastContactSide ?? "home";
       this.events.emit("physics:out", { side: lastSide, reason: result.outReason ?? "out" });

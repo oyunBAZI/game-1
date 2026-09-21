@@ -43,7 +43,7 @@ export class ServeController {
     const secondBounceZ = server === "home"
       ? this.random.range(-TABLE.length * 0.44, -0.18)
       : this.random.range(0.18, TABLE.length * 0.44);
-    const speed = style === "flat" ? 8.4 : style === "kick" ? 10.2 : 7.3;
+    const speed = style === "lob" ? 3.0 : style === "kick" ? 3.9 : 3.45;
     const spin = this.spinForStyle(style, server);
     this.current = {
       server,
@@ -68,7 +68,8 @@ export class ServeController {
     const sign = this.current.server === "home" ? 1 : -1;
     const towardOpponent = -sign;
     const lateral = this.current.targetX;
-    const arc = this.current.style === "lob" ? 3.8 : 2.4;
+    // Drive down into the server's half first; the table rebound clears the net.
+    const arc = this.current.style === "lob" ? -1.35 : -1.6;
     const velocity = new Vec3(
       lateral * 1.2,
       arc,

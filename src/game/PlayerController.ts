@@ -1,5 +1,5 @@
 import { Vec3 } from "../core/Vec3";
-import { clamp, damp } from "../core/MathUtils";
+import { clamp } from "../core/MathUtils";
 import type { InputFrame, Side } from "../core/types";
 import type { PlayerState, PaddleState } from "../physics/State";
 import { PaddleCollider } from "../physics/PaddleCollider";
@@ -43,14 +43,8 @@ export class PlayerController {
   }
 
   update(dt: number): void {
-    this.player.previousPosition.copy(this.player.position);
     const desiredVelocity = this.intent.move.clone().clampMagnitude(1).multiplyScalar(this.player.maxSpeed);
     this.player.velocity.lerp(desiredVelocity, 1 - Math.exp(-12 * dt));
-    this.player.position.addScaled(this.player.velocity, dt);
-    this.player.position.x = clamp(this.player.position.x, -1.2, 1.2);
-    this.player.position.z = this.side === "home"
-      ? clamp(this.player.position.z, 0.85, 2.12)
-      : clamp(this.player.position.z, -2.12, -0.85);
     this.player.energy = clamp(this.player.energy - this.intent.swing * dt * 0.45 + dt * 0.12, 0.15, 1);
     this.targetPaddle.copy(this.player.position).add(new Vec3(
       this.intent.paddleOffset.x,
@@ -59,7 +53,8 @@ export class PlayerController {
     ));
     this.targetNormal.copy(this.intent.paddleNormal);
     this.collider.placeForInput(this.paddle, this.targetPaddle, this.targetNormal, dt, 8 + this.player.energy * 2);
-    this.paddle.swingVelocity.lerp(this.intent.move.clone().multiplyScalar(2 + this.intent.swing * 6), 1 - Math.exp(-18 * dt));
+    this.paddle.swingVelocity.copy(this.paddle.normal).multiplyScalar(this.intent.swing * (2 + this.player.energy * 3));
+    this.paddle.swingVelocity.addScaled(this.intent.move, 1.2);
   }
 
   wantsToServe(): boolean {

@@ -4,6 +4,7 @@ import type { InputSource } from "./InputMapper";
 
 export class GamepadInput implements InputSource {
   private gamepadIndex: number | null = null;
+  private readonly previousButtons = new Map<number, boolean>();
   private readonly connected = (event: GamepadEvent) => {
     if (this.gamepadIndex === null) this.gamepadIndex = event.gamepad.index;
   };
@@ -19,9 +20,18 @@ export class GamepadInput implements InputSource {
   sample(time: number): Partial<InputFrame> {
     const pads = navigator.getGamepads?.() ?? [];
     const pad = this.gamepadIndex !== null ? pads[this.gamepadIndex] : Array.from(pads).find(Boolean);
-    if (!pad) return { time };
+    if (!pad) {
+      this.previousButtons.clear();
+      return { time };
+    }
     const axis = (index: number) => this.applyDeadzone(pad.axes[index] ?? 0);
     const button = (index: number) => pad.buttons[index]?.value ?? 0;
+    const justPressed = (index: number) => {
+      const pressed = button(index) > 0.5;
+      const edge = pressed && !this.previousButtons.get(index);
+      this.previousButtons.set(index, pressed);
+      return edge;
+    };
     return {
       time,
       moveX: axis(0),
@@ -29,9 +39,9 @@ export class GamepadInput implements InputSource {
       paddleX: axis(2),
       paddleY: -axis(3),
       swing: button(0),
-      serve: button(1) > 0.5,
-      pause: button(9) > 0.5,
-      cameraMode: button(3) > 0.5 ? 1 : 0
+      serve: justPressed(1),
+      pause: justPressed(9),
+      cameraMode: justPressed(3) ? 1 : 0
     };
   }
 

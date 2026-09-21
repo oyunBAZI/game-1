@@ -1,7 +1,6 @@
 import { Vec3 } from "../core/Vec3";
 import type { CollisionContact } from "../core/types";
 import { BALL, TABLE } from "./constants";
-import { sweptSpherePlane } from "./CollisionPrimitives";
 import type { BallState } from "./State";
 
 interface NetNode {
@@ -31,22 +30,22 @@ export class NetCollider {
   }
 
   detect(ball: BallState): CollisionContact | null {
-    const plane = sweptSpherePlane(ball.previousPosition, ball.position, BALL.radius, {
-      point: new Vec3(0, this.bottomY + TABLE.netHeight * 0.5, this.centerZ),
-      normal: new Vec3(0, 0, ball.velocity.z >= 0 ? -1 : 1),
-      id: "net-mesh",
-      kind: "net"
-    });
-    if (!plane.hit) return null;
-    if (Math.abs(plane.point.x) > this.width / 2 || plane.point.y < this.bottomY || plane.point.y > this.topY) {
-      return null;
-    }
+    if (Math.abs(ball.velocity.z) < 1e-8) return null;
+    const sign = ball.velocity.z > 0 ? -1 : 1;
+    const contactZ = sign * (TABLE.netThickness * 0.5 + ball.radius);
+    const travel = ball.position.z - ball.previousPosition.z;
+    const fraction = (contactZ - ball.previousPosition.z) / travel;
+    if (fraction < 0 || fraction > 1) return null;
+    const center = ball.previousPosition.clone().lerp(ball.position, fraction);
+    if (Math.abs(center.x) > this.width / 2 + ball.radius ||
+        center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius) return null;
+    const normal = new Vec3(0, 0, sign);
     return {
       kind: "net",
-      timeOfImpact: plane.time,
-      point: plane.point.toJSON(),
-      normal: plane.normal.toJSON(),
-      penetration: plane.penetration,
+      timeOfImpact: fraction,
+      point: center.clone().subScaled(normal, ball.radius).toJSON(),
+      normal: normal.toJSON(),
+      penetration: 0,
       relativeSpeed: ball.velocity.length(),
       surfaceId: "net-mesh"
     };
@@ -63,7 +62,8 @@ export class NetCollider {
         const targetColumn = Math.max(0, Math.min(this.columns - 1, column + columnOffset));
         const node = this.nodes[targetRow * this.columns + targetColumn];
         const distance = Math.sqrt(rowOffset * rowOffset + columnOffset * columnOffset);
-        node.velocity.addScaled(impulse, 1 / (1 + distance * 2));
+        // A lightweight visual membrane responds more visibly than its ball impulse.
+        node.velocity.addScaled(impulse, 45 / (1 + distance * 2));
       }
     }
   }

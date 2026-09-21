@@ -14,6 +14,9 @@ export interface RallyState {
   lastContact: ContactKind | null;
   startedAt: number;
   pointReason: string | null;
+  serveStage: "own" | "receiver" | "complete";
+  expectedBounce: Side | null;
+  bouncesOnExpected: number;
 }
 
 export class RallyController {
@@ -24,7 +27,10 @@ export class RallyController {
     touches: 0,
     lastContact: null,
     startedAt: 0,
-    pointReason: null
+    pointReason: null,
+    serveStage: "own",
+    expectedBounce: null,
+    bouncesOnExpected: 0
   };
   private unsubscribe: Array<() => void> = [];
 
@@ -36,7 +42,7 @@ export class RallyController {
     this.unsubscribe.push(
       this.events.on("rally:start", ({ server }) => this.start(server)),
       this.events.on("physics:contact", (contact) => this.onContact(contact)),
-      this.events.on("physics:out", ({ side, reason }) => this.end(oppositeSide(side), reason))
+      this.events.on("physics:out", ({ reason }) => this.onOut(reason))
     );
   }
 
@@ -48,14 +54,33 @@ export class RallyController {
     this.state.lastContact = null;
     this.state.startedAt = this.world.state.time;
     this.state.pointReason = null;
+    this.state.serveStage = "own";
+    this.state.expectedBounce = server;
+    this.state.bouncesOnExpected = 0;
   }
 
   onContact(contact: CollisionContact & { tick: number }): void {
     if (!this.state.active) return;
-    this.state.lastContact = contact.kind;
     if (contact.kind === "paddle" && contact.side) {
+      const side = contact.side;
+      const opponent = oppositeSide(side);
+      if (this.state.serveStage !== "complete") {
+        this.end(opponent, "early-serve-return");
+        return;
+      }
+      if (this.state.lastHitter === side) {
+        this.end(opponent, "double-hit");
+        return;
+      }
+      if (this.state.expectedBounce !== side || this.state.bouncesOnExpected === 0) {
+        this.end(opponent, "volley");
+        return;
+      }
+      this.state.lastContact = "paddle";
       this.state.lastHitter = contact.side;
       this.state.touches += 1;
+      this.state.expectedBounce = opponent;
+      this.state.bouncesOnExpected = 0;
       const paddle = this.world.state.paddles[contact.side];
       const shot = classifyShot(this.world.state.ball, paddle, contact.side);
       this.events.emit("shot:hit", {
@@ -64,9 +89,39 @@ export class RallyController {
         speed: shot.speed,
         spin: this.world.state.ball.angularVelocity.toJSON()
       });
+      return;
     }
-    if (contact.kind === "net" && this.state.touches === 0) {
-      this.end(oppositeSide(this.state.server ?? "home"), "net-before-serve");
+    if (contact.kind === "table" || contact.kind === "edge") {
+      const side: Side = contact.point.z >= 0 ? "home" : "away";
+      if (side !== this.state.expectedBounce) {
+        this.end(oppositeSide(this.state.lastHitter ?? this.state.server ?? side), "wrong-side-bounce");
+        return;
+      }
+      this.state.bouncesOnExpected += 1;
+      if (this.state.serveStage === "own") {
+        this.state.serveStage = "receiver";
+        this.state.expectedBounce = oppositeSide(this.state.server!);
+        this.state.bouncesOnExpected = 0;
+      } else if (this.state.serveStage === "receiver") {
+        this.state.serveStage = "complete";
+        this.state.lastHitter = this.state.server;
+      } else if (this.state.bouncesOnExpected > 1) {
+        this.end(this.state.lastHitter ?? oppositeSide(side), "double-bounce");
+      }
+      this.state.lastContact = contact.kind;
+      return;
+    }
+    this.state.lastContact = contact.kind;
+  }
+
+  private onOut(reason: string): void {
+    if (!this.state.active) return;
+    if (this.state.serveStage !== "complete") {
+      this.end(oppositeSide(this.state.server ?? "home"), "service-" + reason);
+    } else if (this.state.bouncesOnExpected > 0) {
+      this.end(this.state.lastHitter ?? "home", reason);
+    } else {
+      this.end(oppositeSide(this.state.lastHitter ?? "home"), reason);
     }
   }
 
@@ -74,8 +129,8 @@ export class RallyController {
     if (!this.state.active) return;
     this.state.active = false;
     this.state.pointReason = reason;
-    this.events.emit("rally:end", { winner, reason });
     this.scoreboard.awardPoint(winner);
+    this.events.emit("rally:end", { winner, reason });
   }
 
   validateServe(): { valid: boolean; reason?: string } {

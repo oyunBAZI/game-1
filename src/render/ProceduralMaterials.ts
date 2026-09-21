@@ -25,17 +25,29 @@ function standard(color: number, roughness: number, metalness = 0): THREE.MeshSt
 }
 
 export function createMaterialPalette(): MaterialPalette {
+  const grain = createCanvasNoiseTexture(128);
+  grain.repeat.set(20, 36);
+  const floorGrain = grain.clone();
+  floorGrain.repeat.set(55, 70);
+  floorGrain.needsUpdate = true;
+  const table = new THREE.MeshPhysicalMaterial({
+    color: 0x075b7f, roughness: 0.48, metalness: 0.02,
+    clearcoat: 0.18, clearcoatRoughness: 0.68, bumpMap: grain, bumpScale: 0.0015
+  });
+  const floor = new THREE.MeshStandardMaterial({
+    color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003
+  });
   return {
-    table: standard(0x0876a5, 0.38),
-    tableEdge: standard(0x092d3c, 0.52, 0.15),
+    table,
+    tableEdge: standard(0x16272f, 0.43, 0.22),
     tableLine: new THREE.MeshBasicMaterial({ color: 0xf1f8fb }),
-    floor: standard(0x1b2c35, 0.62),
+    floor,
     wall: standard(0x101d27, 0.78),
     net: standard(0x0c1519, 0.85),
-    ball: standard(0xf7f6e8, 0.32),
-    rubberRed: standard(0xb31d2c, 0.54),
-    rubberBlack: standard(0x070a0c, 0.64),
-    wood: standard(0x6f3d21, 0.54),
+    ball: new THREE.MeshPhysicalMaterial({ color: 0xfff5d8, roughness: 0.36, clearcoat: 0.2 }),
+    rubberRed: standard(0xb02433, 0.8),
+    rubberBlack: standard(0x151b22, 0.78),
+    wood: standard(0x915c37, 0.59),
     metal: standard(0x8998a0, 0.3, 0.72),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };
@@ -56,8 +68,10 @@ export function createCanvasNoiseTexture(size = 128): THREE.CanvasTexture {
   const context = canvas.getContext("2d");
   if (!context) return new THREE.CanvasTexture(canvas);
   const image = context.createImageData(size, size);
+  let seed = 2463534242;
   for (let index = 0; index < image.data.length; index += 4) {
-    const value = 116 + Math.floor(Math.random() * 35);
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    const value = 108 + (seed >>> 0) % 56;
     image.data[index] = value;
     image.data[index + 1] = value;
     image.data[index + 2] = value;

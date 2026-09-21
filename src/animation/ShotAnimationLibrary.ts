@@ -22,7 +22,7 @@ export const STROKE_CLIPS: StrokeClip[] = [
   { state: "lob", duration: 0.9, windup: 0.28, contact: 0.44, followThrough: 0.82, basePose: { hipHeight: -0.05 }, amplitude: { torsoYaw: 0.38, shoulderYaw: 0.76, racketPitch: 0.76 } }
 ];
 
-export function clipFor(kind: ShotKind): StrokeClip {
-  const state = kind === "unknown" ? "drive" : kind as StrokeState;
+export function clipFor(kind: ShotKind | StrokeState): StrokeClip {
+  const state = kind === "unknown" || kind === "none" ? "drive" : kind as StrokeState;
   return STROKE_CLIPS.find((clip) => clip.state === state) ?? STROKE_CLIPS[1];
 }

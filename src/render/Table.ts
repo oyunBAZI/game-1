@@ -7,7 +7,8 @@ export class TableVisual {
   private readonly top: THREE.Mesh;
   private readonly legs = new THREE.Group();
   private readonly net = new THREE.Group();
-  private readonly shadows = new THREE.Group();
+  private readonly netSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+  private readonly netTexture: THREE.CanvasTexture;
 
   constructor(private readonly materials: MaterialPalette) {
     this.group.name = "table-visual";
@@ -20,7 +21,8 @@ export class TableVisual {
     this.addBoundaryLines();
     this.addUnderframe();
     this.addLegs();
-    this.addNet();
+    this.netTexture = this.makeNetTexture();
+    this.netSurface = this.addNet();
   }
 
   private addBoundaryLines(): void {
@@ -66,6 +68,17 @@ export class TableVisual {
     const endRail2 = endRail.clone();
     endRail2.position.z = TABLE.length / 2 - 0.07;
     this.group.add(longRail, longRail2, endRail, endRail2);
+    for (const z of [-0.82, 0.82]) {
+      const crossbar = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width - 0.12, 0.035, 0.035), this.materials.metal);
+      crossbar.position.set(0, TABLE.top - 0.24, z);
+      crossbar.castShadow = true;
+      this.group.add(crossbar);
+    }
+    for (const z of [-TABLE.length / 2 + 0.018, TABLE.length / 2 - 0.018]) {
+      const apron = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width, 0.047, 0.013), this.materials.tableEdge);
+      apron.position.set(0, TABLE.top - 0.038, z);
+      this.group.add(apron);
+    }
   }
 
   private addLegs(): void {
@@ -93,7 +106,30 @@ export class TableVisual {
     this.group.add(this.legs);
   }
 
-  private addNet(): void {
+  private makeNetTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 128);
+      ctx.strokeStyle = "rgba(226,237,231,.72)";
+      ctx.lineWidth = 1.3;
+      for (let x = 0; x <= 256; x += 13) {
+        ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, 128); ctx.stroke();
+      }
+      for (let y = 0; y <= 128; y += 13) {
+        ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(256, y + 0.5); ctx.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(6, 1);
+    return texture;
+  }
+
+  private addNet(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> {
     const postHeight = TABLE.netHeight + 0.08;
     for (const x of [-TABLE.width / 2 - 0.018, TABLE.width / 2 + 0.018]) {
       const post = new THREE.Mesh(
@@ -103,37 +139,45 @@ export class TableVisual {
       post.position.set(x, TABLE.top + postHeight / 2, 0);
       post.castShadow = true;
       this.net.add(post);
+      const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.042), this.materials.metal);
+      clamp.position.set(x, TABLE.top + TABLE.netHeight + 0.012, 0);
+      this.net.add(clamp);
     }
     const netGeometry = new THREE.PlaneGeometry(TABLE.width, TABLE.netHeight, 12, 4);
-    const netMesh = new THREE.Mesh(
+    const netMesh = new THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>(
       netGeometry,
       new THREE.MeshStandardMaterial({
-        color: 0x17262b,
-        roughness: 0.94,
+        color: 0xc7d8d8,
+        map: this.netTexture,
+        alphaTest: 0.2,
+        roughness: 0.9,
         transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        depthWrite: false
       })
     );
-    netMesh.rotation.y = Math.PI / 2;
+    netMesh.name = "woven-net";
     netMesh.position.set(0, TABLE.top + TABLE.netHeight / 2, 0);
-    this.net.add(netMesh);
+    netMesh.castShadow = true;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width + 0.04, 0.012, 0.014), this.materials.tableLine);
+    band.position.set(0, TABLE.top + TABLE.netHeight + 0.004, 0);
+    this.net.add(netMesh, band);
     this.group.add(this.net);
+    return netMesh;
   }
 
   updateNet(nodes: Array<{ x: number; y: number; z: number }>): void {
-    const mesh = this.net.children.find((child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.PlaneGeometry) as THREE.Mesh | undefined;
-    if (!mesh) return;
-    const positions = mesh.geometry.getAttribute("position");
+    const positions = this.netSurface.geometry.getAttribute("position");
     for (let index = 0; index < Math.min(nodes.length, positions.count); index += 1) {
       const node = nodes[index];
-      positions.setXYZ(index, node.z, node.y - (TABLE.top + TABLE.netHeight / 2), node.x);
+      positions.setXYZ(index, node.x, node.y - (TABLE.top + TABLE.netHeight / 2), node.z);
     }
     positions.needsUpdate = true;
-    mesh.geometry.computeVertexNormals();
+    this.netSurface.geometry.computeVertexNormals();
   }
 
   dispose(): void {
+    this.netTexture.dispose();
     this.group.traverse((object) => {
       const mesh = object as THREE.Mesh;
       mesh.geometry?.dispose();

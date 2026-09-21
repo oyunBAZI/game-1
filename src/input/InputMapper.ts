@@ -25,13 +25,13 @@ export function mergeInputFrames(base: InputFrame, patch: Partial<InputFrame>): 
     paddleX: patch.paddleX ?? base.paddleX,
     paddleY: patch.paddleY ?? base.paddleY,
     paddleZ: patch.paddleZ ?? base.paddleZ,
-    swing: patch.swing ?? base.swing,
+    swing: Math.max(base.swing, patch.swing ?? 0),
     spinX: patch.spinX ?? base.spinX,
     spinY: patch.spinY ?? base.spinY,
     spinZ: patch.spinZ ?? base.spinZ,
-    serve: patch.serve ?? base.serve,
-    pause: patch.pause ?? base.pause,
-    cameraMode: patch.cameraMode ?? base.cameraMode
+    serve: base.serve || Boolean(patch.serve),
+    pause: base.pause || Boolean(patch.pause),
+    cameraMode: Math.max(base.cameraMode, patch.cameraMode ?? 0)
   };
 }
 

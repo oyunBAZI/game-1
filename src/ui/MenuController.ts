@@ -29,9 +29,9 @@ export class MenuController {
     this.modeLabel.textContent = "PRACTICE MODE";
     this.modeLabel.className = "ttu-chip";
     const start = this.button("Start session", () => this.start());
-    const reset = this.button("Reset physics", () => {
-      this.simulation.world.reset();
-      this.events.emit("ui:toast", { message: "Simulation reset", level: "info" });
+    const reset = this.button("Reset session", () => {
+      this.simulation.restart();
+      this.events.emit("ui:toast", { message: "Session reset", level: "info" });
     });
     const hint = document.createElement("small");
     hint.textContent = "Press C to cycle cameras during play.";

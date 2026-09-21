@@ -6,25 +6,23 @@ This commit is the continuation point for the game.
 
 The repository now contains a browser application shell, a fixed-step simulation, a regulation-sized table coordinate system, ball aerodynamics, spin state, table and net collision seams, paddle contact response, match rules, scoring, serve state, rally state, an opponent brain, procedural visuals, browser inputs, UI, audio, replay, telemetry, persistence, accessibility, extension APIs, and future networking boundaries.
 
-The scene is intentionally asset-free. That lets a future developer run the simulation immediately after installing dependencies, inspect the entire foundation in source control, and replace individual visual adapters with authored models later.
+The scene uses procedural geometry and generated canvas textures, so no external assets are needed to run it. `RenderBridge` connects the simulated table, ball, net, rackets and athlete rigs to Three.js. These adapters can be replaced with authored assets later.
 
 ## What is not claimed
 
-This is not a finished commercial sports game. It is a large, coherent starting codebase. The contact coefficients are tunable approximations, the player is represented by a paddle/player state rather than a final character rig, and multiplayer is a protocol seam rather than a shipped online service.
+This is not a finished commercial sports game. The contact coefficients and serve recipes are tunable approximations, the athletes are procedural rather than motion-captured characters, and multiplayer is a protocol seam rather than a shipped online service.
 
 Those boundaries are explicit so future work can improve fidelity without rewriting the project.
 
 ## Recommended next sequence
 
-1. Install dependencies and run validate, smoke, and build.
-2. Open the Vite scene and calibrate table/ball readability.
-3. Add headless unit tests around the physics response.
-4. Replace the procedural table and paddle materials with authored assets while retaining the same adapters.
-5. Calibrate contact coefficients against recorded real-world trajectories.
-6. Add a proper continuous-collision coordinator that orders multiple contacts by time of impact.
-7. Add a richer player body and IK target bridge.
-8. Add replay capture to the UI and inspect frame-by-frame contacts.
-9. Only then begin online authority and rollback integration.
+1. Run `npm ci`, then `npm run validate`, `npm run typecheck`, `npm run test:simulation`, and `npm run build`.
+2. Visually inspect court framing, net texture and player rigs on target GPUs and viewports.
+3. Calibrate serves, contact coefficients and spin against measured trajectories.
+4. Order paddle, net and table contacts by time of impact in one collision coordinator.
+5. Add replay capture to the UI and compare deterministic trajectories frame by frame.
+6. Replace procedural player anatomy and textures with authored assets when ready.
+7. Begin online authority and rollback integration after the local simulation is stable.
 
 ## Coordinate contract
 
@@ -54,6 +52,6 @@ When adding a feature, write this contract into its tests.
 
 ## Verification
 
-The repository includes a dependency-free smoke script and a structural validator. The GitHub workflow runs them alongside the Vite build on pushes and pull requests.
+The workflow runs a structural validator, full TypeScript checking, simulation integration tests and a Vite build. The simulation test exercises high-speed table and net contacts, serve bounce order, AI racket contact and rally scoring. The old standalone numeric smoke script remains for reference; `test:simulation` now runs the actual source code.
 
 Do not interpret a green build as physics certification. A build proves packaging and syntax. Physics certification requires deterministic tests, calibration data, and measured behavior.

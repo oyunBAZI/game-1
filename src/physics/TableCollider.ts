@@ -18,6 +18,7 @@ export class TableCollider {
   readonly far = TABLE.length / 2;
 
   detect(ball: BallState): TableCollision | null {
+    if (ball.velocity.y >= 0 || ball.previousPosition.y < this.topY + ball.radius - 0.0001) return null;
     const start = ball.previousPosition;
     const end = ball.position;
     const plane = sweptSpherePlane(start, end, BALL.radius, {
@@ -41,6 +42,7 @@ export class TableCollider {
         surface: "top"
       };
     }
+    // Side and end edges are considered only on a downward crossing.
     const edge = this.detectEdge(ball);
     if (edge) return edge;
     return null;
@@ -55,20 +57,23 @@ export class TableCollider {
   }
 
   detectEdge(ball: BallState): TableCollision | null {
-    const x = ball.position.x;
-    const z = ball.position.z;
-    const nearEdge = Math.abs(Math.abs(x) - TABLE.width / 2) <= BALL.radius * 1.1;
-    const endEdge = Math.abs(Math.abs(z) - TABLE.length / 2) <= BALL.radius * 1.1;
-    const nearHeight = Math.abs(ball.position.y - TABLE.top) <= BALL.radius * 1.3;
-    if (!nearHeight || (!nearEdge && !endEdge)) return null;
+    const start = ball.previousPosition;
+    const end = ball.position;
+    const fraction = (start.y - TABLE.top - BALL.radius) / Math.max(1e-8, start.y - end.y);
+    if (fraction < 0 || fraction > 1) return null;
+    const x = start.x + (end.x - start.x) * fraction;
+    const z = start.z + (end.z - start.z) * fraction;
+    const nearEdge = Math.abs(Math.abs(x) - TABLE.width / 2) <= BALL.radius * 0.65 && Math.abs(z) <= TABLE.length / 2;
+    const endEdge = Math.abs(Math.abs(z) - TABLE.length / 2) <= BALL.radius * 0.65 && Math.abs(x) <= TABLE.width / 2;
+    if (!nearEdge && !endEdge) return null;
     const normal = nearEdge
       ? new Vec3(x > 0 ? 1 : -1, 0.45, 0).normalize()
       : new Vec3(0, 0.45, z > 0 ? 1 : -1).normalize();
     return {
       contact: {
         kind: "edge",
-        timeOfImpact: 0,
-        point: ball.position.toJSON(),
+        timeOfImpact: fraction,
+        point: new Vec3(x, TABLE.top, z).toJSON(),
         normal: normal.toJSON(),
         penetration: 0,
         relativeSpeed: ball.velocity.length(),

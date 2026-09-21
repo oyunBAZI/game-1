@@ -3,6 +3,7 @@ import type { EventKey, GameEventMap } from "./types";
 type Listener<T> = (payload: T) => void;
 
 export interface EventSubscription {
+  (): void;
   unsubscribe(): void;
 }
 
@@ -19,9 +20,8 @@ export class EventBus {
     const bucket = this.listeners.get(key) ?? new Set<Listener<unknown>>();
     bucket.add(listener as Listener<unknown>);
     this.listeners.set(key, bucket);
-    return {
-      unsubscribe: () => bucket.delete(listener as Listener<unknown>)
-    };
+    const unsubscribe = () => { bucket.delete(listener as Listener<unknown>); };
+    return Object.assign(unsubscribe, { unsubscribe });
   }
 
   once<K extends EventKey>(key: K, listener: Listener<GameEventMap[K]>): EventSubscription {

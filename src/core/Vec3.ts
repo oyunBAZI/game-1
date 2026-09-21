@@ -41,6 +41,11 @@ export class Vec3 implements Vec3Like {
     return this;
   }
 
+  setY(y: number): this {
+    this.y = y;
+    return this;
+  }
+
   copy(value: Vec3Like): this {
     this.x = value.x;
     this.y = value.y;

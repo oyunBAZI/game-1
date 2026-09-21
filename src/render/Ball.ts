@@ -11,9 +11,25 @@ export class BallVisual {
   private readonly trail: THREE.Line;
   private readonly trailPositions: THREE.Vector3[] = [];
   private readonly ballQuaternion = new Quat();
+  private readonly print: THREE.CanvasTexture;
 
   constructor(materials: MaterialPalette) {
-    const geometry = new THREE.SphereGeometry(BALL.radius, 24, 16);
+    const geometry = new THREE.SphereGeometry(BALL.radius, 32, 24);
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#fff5df"; ctx.fillRect(0, 0, 512, 256);
+      ctx.strokeStyle = "#c75d36"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(165, 130, 52, 48, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#343d40"; ctx.font = "bold 34px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("40+", 165, 141);
+    }
+    this.print = new THREE.CanvasTexture(canvas);
+    this.print.colorSpace = THREE.SRGBColorSpace;
+    materials.ball.map = this.print;
+    materials.ball.needsUpdate = true;
     this.mesh = new THREE.Mesh(geometry, materials.ball);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -29,11 +45,11 @@ export class BallVisual {
     this.group.add(this.trail);
   }
 
-  sync(state: BallState, alpha: number, showTrail = false): void {
+  sync(state: BallState, alpha: number, dt: number, showTrail = false): void {
     const interpolated = Vec3.from(state.previousPosition).lerp(state.position, alpha);
     this.group.position.set(interpolated.x, interpolated.y, interpolated.z);
     const spinAxis = state.angularVelocity.clone();
-    const angle = spinAxis.length() * 0.004;
+    const angle = spinAxis.length() * Math.min(dt, 1 / 30);
     if (angle > 0.0001) {
       spinAxis.normalize();
       this.ballQuaternion.copy(Quat.fromAxisAngle(spinAxis, angle));
@@ -47,16 +63,22 @@ export class BallVisual {
     }
     this.trail.visible = showTrail;
     if (showTrail) {
+      if (this.trailPositions.length && this.trailPositions[this.trailPositions.length - 1].distanceTo(this.group.position) > 0.8) {
+        this.trailPositions.length = 0;
+      }
       this.trailPositions.push(new THREE.Vector3(interpolated.x, interpolated.y, interpolated.z));
-      if (this.trailPositions.length > 12) this.trailPositions.shift();
+      if (this.trailPositions.length > 18) this.trailPositions.shift();
       const geometry = this.trail.geometry;
       geometry.setFromPoints(this.trailPositions);
+      this.trail.position.copy(this.group.position).negate();
+    } else {
+      this.trailPositions.length = 0;
     }
   }
 
   dispose(): void {
     this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.Material).dispose();
+    this.print.dispose();
     this.trail.geometry.dispose();
     (this.trail.material as THREE.Material).dispose();
   }

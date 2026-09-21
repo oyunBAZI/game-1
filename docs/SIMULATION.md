@@ -28,13 +28,13 @@ Each ball step:
 4. integrate linear velocity and position;
 5. integrate angular velocity;
 6. perform continuous collision tests;
-7. resolve the earliest valid contact;
+7. resolve paddle, net and table contacts in explicit order;
 8. clamp impossible runaway values;
 9. emit the contact event after state is coherent.
 
 ## Contact priority
 
-The current implementation checks paddle, net, then table and edge. A future continuous-collision coordinator should sort all candidate time-of-impact values and resolve the earliest one. The current ordering is intentionally explicit so it can be replaced without changing match rules.
+The current implementation checks paddle, net, then table and edge. Swept tests prevent tunneling for fast motion, but multiple contacts in the same fixed step are not yet sorted by time of impact. A future collision coordinator should resolve the earliest candidate first.
 
 ## Spin
 

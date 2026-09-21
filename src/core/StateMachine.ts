@@ -1,6 +1,4 @@
-export interface StateContext {
-  [key: string]: unknown;
-}
+export type StateContext = object;
 
 export interface StateDefinition<TContext extends StateContext = StateContext> {
   name: string;

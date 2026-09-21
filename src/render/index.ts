@@ -4,6 +4,7 @@ export * from "./Table";
 export * from "./Arena";
 export * from "./Ball";
 export * from "./Paddle";
+export * from "./Player";
 export * from "./Lighting";
 export * from "./CameraRig";
 export * from "./RenderBridge";

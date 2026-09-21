@@ -53,16 +53,20 @@ export class AIBrain {
     }
     this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
-    const predicted = this.prediction.position;
+    const interceptZ = this.side === "away" ? -1.06 : 1.06;
+    const intercept = this.prediction.points.find((point) =>
+      this.side === "away" ? point.position.z <= interceptZ : point.position.z >= interceptZ
+    );
+    const predicted = intercept?.position ?? this.prediction.position;
     const lateralError = this.random.signed() * this.profile.placementError;
-    const depth = this.side === "home" ? 0.34 : -0.34;
+    const depth = this.side === "home" ? 0.32 : -0.32;
     this.target.set(
       clamp(predicted.x + lateralError, -1.1, 1.1),
       clamp(predicted.y + this.random.signed() * this.profile.placementError * 0.4, 0.62, 1.7),
-      player.position.z + depth
+      interceptZ
     );
     const move = this.target.clone().sub(player.position).setY(0).clampMagnitude(1);
-    const reachable = this.target.distanceTo(paddle.position) < 1.3 + confidence * 0.3;
+    const reachable = this.target.distanceTo(paddle.position) < 1.15 + confidence * 0.35;
     const swing = reachable && movingTowardAI && ball.position.y > 0.5
       ? clamp(0.25 + this.profile.aggression * 0.8 + ball.speed() / 70, 0, 1)
       : 0;
@@ -78,7 +82,7 @@ export class AIBrain {
     );
     this.lastAction = {
       move,
-      paddleTarget: this.target.clone(),
+      paddleTarget: this.target.clone().add(new Vec3(0, 0, depth * 0.1)),
       paddleNormal: normal,
       swing,
       spin,

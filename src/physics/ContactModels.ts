@@ -30,13 +30,23 @@ export function resolveTableBounce(
   const spinBefore = ball.angularVelocity.clone();
   const energyBefore = kineticEnergy(ball);
   const normalSpeed = ball.velocity.dot(normal);
-  if (normalSpeed < 0) ball.velocity.subScaled(normal, (1 + table.restitution) * normalSpeed);
-  const tangent = ball.velocity.clone().projectOnPlane(normal);
-  const spinSurface = new Vec3().crossVectors(ball.angularVelocity, normal).multiplyScalar(BALL.radius);
-  const relativeTangent = tangent.add(spinSurface);
-  const frictionImpulse = relativeTangent.multiplyScalar(-clamp(table.friction, 0, 1) * ball.mass);
+  if (normalSpeed >= 0) return {
+    velocityBefore: before, velocityAfter: before.clone(), spinBefore,
+    spinAfter: spinBefore.clone(), energyBefore, energyAfter: energyBefore,
+    impulse: new Vec3(), slip: 0
+  };
+  const normalImpulse = -(1 + table.restitution) * normalSpeed * ball.mass;
+  ball.velocity.addScaled(normal, normalImpulse / ball.mass);
+  const arm = normal.clone().multiplyScalar(-BALL.radius);
+  const relativeTangent = ball.velocity.clone().add(new Vec3().crossVectors(ball.angularVelocity, arm)).projectOnPlane(normal);
+  const slip = relativeTangent.length();
+  const effectiveMass = 1 / (1 / ball.mass + BALL.radius * BALL.radius / BALL.inertia);
+  const frictionImpulse = relativeTangent.multiplyScalar(-Math.min(
+    effectiveMass,
+    slip > 1e-8 ? table.friction * normalImpulse / slip : 0
+  ));
   ball.velocity.addScaled(frictionImpulse, 1 / ball.mass);
-  const spinDelta = new Vec3().crossVectors(normal, frictionImpulse).multiplyScalar(1 / Math.max(BALL.inertia, 1e-8));
+  const spinDelta = new Vec3().crossVectors(arm, frictionImpulse).multiplyScalar(1 / BALL.inertia);
   ball.angularVelocity.add(spinDelta).clampMagnitude(1600);
   ball.velocity.clampMagnitude(55);
   const energyAfter = kineticEnergy(ball);
@@ -48,7 +58,7 @@ export function resolveTableBounce(
     energyBefore,
     energyAfter,
     impulse: ball.velocity.clone().sub(before).multiplyScalar(ball.mass),
-    slip: relativeTangent.length()
+    slip
   };
 }
 
@@ -79,16 +89,19 @@ export function resolvePaddleContact(
   }
   const normalImpulse = -(1 + rubber.restitution) * approach * ball.mass;
   ball.velocity.addScaled(contactNormal, normalImpulse / ball.mass);
-  const tangential = relative.projectOnPlane(contactNormal);
+  const arm = contactNormal.clone().multiplyScalar(-BALL.radius);
+  const tangential = relative.clone().add(new Vec3().crossVectors(ball.angularVelocity, arm)).projectOnPlane(contactNormal);
+  const slip = tangential.length();
   const desired = desiredSpin.clone().clampMagnitude(1000);
   const grip = clamp(rubber.friction * rubber.spinTransfer, 0, 1.5);
-  const tangentialCorrection = tangential.multiplyScalar(-grip * 0.62);
-  ball.velocity.addScaled(tangentialCorrection, 1);
-  const contactTorque = new Vec3().crossVectors(contactNormal, tangentialCorrection).multiplyScalar(
-    rubber.spinTransfer / Math.max(BALL.inertia, 1e-8)
-  );
+  const effectiveMass = 1 / (1 / ball.mass + BALL.radius * BALL.radius / BALL.inertia);
+  const tangentImpulse = tangential.multiplyScalar(-Math.min(
+    effectiveMass * rubber.spinTransfer,
+    slip > 1e-8 ? grip * normalImpulse / slip : 0
+  ));
+  ball.velocity.addScaled(tangentImpulse, 1 / ball.mass);
+  const contactTorque = new Vec3().crossVectors(arm, tangentImpulse).multiplyScalar(1 / BALL.inertia);
   ball.angularVelocity.add(contactTorque).addScaled(desired, 0.35);
-  ball.velocity.addScaled(paddle.swingVelocity, rubber.restitution * 0.18);
   ball.velocity.clampMagnitude(55);
   ball.angularVelocity.clampMagnitude(1600);
   const energyAfter = kineticEnergy(ball);
@@ -100,7 +113,7 @@ export function resolvePaddleContact(
     energyBefore,
     energyAfter,
     impulse: ball.velocity.clone().sub(before).multiplyScalar(ball.mass),
-    slip: tangential.length()
+    slip
   };
 }
 

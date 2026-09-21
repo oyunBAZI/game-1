@@ -66,8 +66,12 @@ export class Aerodynamics {
     const spin = angularVelocity.length();
     if (speed < 1e-7 || spin < 1e-7) return new Vec3();
     this.magnus.crossVectors(angularVelocity, velocity);
-    const liftScale = this.tuning.magnusCoefficient * clamp(spin / 80, 0, 8);
-    return this.magnus.multiplyScalar(liftScale);
+    if (this.magnus.lengthSq() < 1e-12) return new Vec3();
+    // Lift is bounded by dynamic pressure, like drag. Scaling omega x v
+    // directly created accelerations larger than gravity for ordinary serves.
+    const liftCoefficient = clamp(this.tuning.magnusCoefficient * spin * 8, 0, 0.6);
+    const force = 0.5 * this.tuning.airDensity * BALL.area * speed * speed * liftCoefficient;
+    return this.magnus.normalize().multiplyScalar(force);
   }
 
   estimateFlightTime(start: Vec3, velocity: Vec3, targetY: number, maxTime = 4): number {

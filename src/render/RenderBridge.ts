@@ -7,6 +7,7 @@ import { PaddleVisual } from "./Paddle";
 import { TableVisual } from "./Table";
 import { createMaterialPalette } from "./ProceduralMaterials";
 import { EnvironmentDetail } from "./EnvironmentDetail";
+import { PlayerVisual } from "./Player";
 import type { GameSimulation } from "../game/GameSimulation";
 
 export class RenderBridge {
@@ -18,6 +19,7 @@ export class RenderBridge {
   readonly ball: BallVisual;
   readonly paddles: Record<"home" | "away", PaddleVisual>;
   readonly environment: EnvironmentDetail;
+  readonly players: Record<"home" | "away", PlayerVisual>;
   private readonly materials = createMaterialPalette();
 
   constructor(private readonly simulation: GameSimulation) {
@@ -27,11 +29,14 @@ export class RenderBridge {
     this.arena = new ArenaVisual(this.materials);
     this.lighting = new ArenaLighting(simulation.config.graphics.shadows);
     this.ball = new BallVisual(this.materials);
-    this.environment = new EnvironmentDetail(this.materials);
+    this.environment = new EnvironmentDetail(this.materials, {
+      banners: false, benches: false, plants: false, wallPanels: false
+    });
     this.paddles = {
       home: new PaddleVisual("home", this.materials),
       away: new PaddleVisual("away", this.materials)
     };
+    this.players = { home: new PlayerVisual("home"), away: new PlayerVisual("away") };
     this.renderer.add(this.arena.group);
     this.renderer.add(this.environment.group);
     this.renderer.add(this.table.group);
@@ -39,6 +44,8 @@ export class RenderBridge {
     this.renderer.add(this.ball.group);
     this.renderer.add(this.paddles.home.group);
     this.renderer.add(this.paddles.away.group);
+    this.renderer.add(this.players.home.group);
+    this.renderer.add(this.players.away.group);
   }
 
   mount(container: HTMLElement): void {
@@ -46,10 +53,15 @@ export class RenderBridge {
   }
 
   update(dt: number, alpha: number): void {
-    this.ball.sync(this.simulation.world.state.ball, alpha, this.simulation.config.graphics.showTrails);
-    this.paddles.home.sync(this.simulation.world.state.paddles.home, alpha);
-    this.paddles.away.sync(this.simulation.world.state.paddles.away, alpha);
-    this.camera.update(dt, this.simulation.world.state.ball);
+    const state = this.simulation.world.state;
+    this.ball.sync(state.ball, alpha, dt, this.simulation.config.graphics.showTrails);
+    this.paddles.home.sync(state.paddles.home, alpha);
+    this.paddles.away.sync(state.paddles.away, alpha);
+    this.players.home.sync(state.players.home, state.paddles.home, alpha, state.time);
+    this.players.away.sync(state.players.away, state.paddles.away, alpha, state.time);
+    this.table.updateNet(this.simulation.world.net.positions());
+    this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
+    this.camera.update(dt, state.ball, this.simulation.config.graphics.reducedMotion);
     this.renderer.render();
   }
 
@@ -58,10 +70,6 @@ export class RenderBridge {
   }
 
   dispose(): void {
-    this.ball.dispose();
-    this.paddles.home.dispose();
-    this.paddles.away.dispose();
-    this.table.dispose();
     this.renderer.dispose();
   }
 }
