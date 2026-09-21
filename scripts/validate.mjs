@@ -1,19 +1,21 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join, relative, extname } from "node:path";
 
-const root = new URL("../", import.meta.url);
+const root = new URL("../", import.meta.url).pathname;
 const errors = [];
+const repositoryFiles = [];
 const sourceFiles = [];
 const slash = String.fromCharCode(92);
-const templateQuote = String.fromCharCode(96);
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) await walk(path);
-    else if ([".ts", ".tsx", ".mjs"].includes(extname(entry.name))) sourceFiles.push(path);
+    const absolute = join(directory, entry.name);
+    const relativePath = relative(root, absolute).replaceAll(slash, "/");
+    repositoryFiles.push(relativePath);
+    if (entry.isDirectory()) await walk(absolute);
+    else if ([".ts", ".tsx"].includes(extname(entry.name))) sourceFiles.push(absolute);
   }
 }
 
@@ -65,7 +67,7 @@ function checkBalance(text, file) {
       index += 1;
       continue;
     }
-    if (char === "'" || char === '"' || char === templateQuote) {
+    if (char === "'" || char === '"') {
       quote = char;
       continue;
     }
@@ -83,32 +85,34 @@ function checkBalance(text, file) {
   if (stack.length) errors.push(file + ": unclosed " + stack[stack.length - 1]);
 }
 
-const absoluteRoot = root.pathname;
-await walk(absoluteRoot);
-const names = new Set(sourceFiles.map((file) => file.replace(absoluteRoot, "").replaceAll(slash, "/")));
+await walk(root);
+const names = new Set(repositoryFiles);
 let totalLines = 0;
 for (const file of sourceFiles) {
   const text = await readFile(file, "utf8");
-  const relative = file.replace(absoluteRoot, "").replaceAll(slash, "/");
+  const relativePath = relative(root, file).replaceAll(slash, "/");
   totalLines += text.split("\n").length;
-  checkBalance(text, relative);
+  checkBalance(text, relativePath);
   const imports = [...text.matchAll(/(?:from|import)\s*(?:\(\s*)?["']([^"']+)["']/g)].map((match) => match[1]);
   for (const target of imports) {
     if (!target.startsWith(".")) continue;
-    const base = normalize(relative.split("/").slice(0, -1).join("/") + "/" + target);
-    const candidates = [base, base + ".ts", base + ".tsx", base + ".mjs", base + "/index.ts"];
-    if (!candidates.some((candidate) => names.has(candidate))) errors.push(relative + ": unresolved import " + target);
+    const base = normalize(relativePath.split("/").slice(0, -1).join("/") + "/" + target);
+    const candidates = [base, base + ".ts", base + ".tsx", base + "/index.ts"];
+    if (!candidates.some((candidate) => names.has(candidate))) errors.push(relativePath + ": unresolved import " + target);
   }
 }
-if (totalLines < 10000) errors.push("line count below 10000: " + totalLines);
-if (!names.has("package.json")) errors.push("package.json missing");
-if (!names.has("src/main.ts")) errors.push("src/main.ts missing");
+if (totalLines < 10000) errors.push("source line count below 10000: " + totalLines);
+for (const required of ["package.json", "src/main.ts", "src/index.ts", "scripts/validate.mjs"]) {
+  if (!names.has(required)) errors.push("missing " + required);
+}
+const packageText = await readFile(join(root, "package.json"), "utf8");
+JSON.parse(packageText);
 if (errors.length) {
   console.error("VALIDATION FAILED");
   for (const error of errors) console.error(" - " + error);
   process.exit(1);
 }
 console.log("VALIDATION PASSED");
-console.log("Files:", sourceFiles.length);
-console.log("Lines:", totalLines);
+console.log("Source files:", sourceFiles.length);
+console.log("Source lines:", totalLines);
 console.log("Relative imports resolved.");
