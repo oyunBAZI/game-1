@@ -12,46 +12,46 @@
 
 # Table of Contents
 
-- [Overview](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#overview)
-- [Vision](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#vision)
-- [Core Principles](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#core-principles)
-- [Features](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#features)
-- [Graphics](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#graphics)
-- [Physics](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#physics)
-- [Ball Simulation](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#ball-simulation)
-- [Spin Simulation](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#spin-simulation)
-- [Paddle Physics](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#paddle-physics)
-- [Table and Net Physics](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#table-and-net-physics)
-- [Player Movement](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#player-movement)
-- [Animation](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#animation)
-- [Camera System](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#camera-system)
-- [Lighting](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#lighting)
-- [Materials](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#materials)
-- [Visual Effects](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#visual-effects)
-- [Audio](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#audio)
-- [AI Opponents](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#ai-opponents)
-- [Game Modes](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#game-modes)
-- [Controls](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#controls)
-- [Rules](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#rules)
-- [Difficulty System](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#difficulty-system)
-- [Performance Targets](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#performance-targets)
-- [Adaptive Graphics](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#adaptive-graphics)
-- [Technology Stack](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#technology-stack)
-- [Project Architecture](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#project-architecture)
-- [Suggested Folder Structure](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#suggested-folder-structure)
-- [Installation](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#installation)
-- [Development](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#development)
-- [Configuration](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#configuration)
-- [Physics Configuration](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#physics-configuration)
-- [Graphics Configuration](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#graphics-configuration)
-- [Debugging](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#debugging)
-- [Testing](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#testing)
-- [Accessibility](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#accessibility)
-- [Browser Support](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#browser-support)
-- [Development Rules](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#development-rules)
-- [Milestones](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#milestones)
-- [Future Features](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#future-features)
-- [License](https://chatgpt.com/c/6ab12f95-57f4-83ea-9c76-edea45dea740#license)
+- [Overview](#overview)
+- [Vision](#vision)
+- [Core Principles](#core-principles)
+- [Features](#features)
+- [Graphics](#graphics)
+- [Physics](#physics)
+- [Ball Simulation](#ball-simulation)
+- [Spin Simulation](#spin-simulation)
+- [Paddle Physics](#paddle-physics)
+- [Table and Net Physics](#table-and-net-physics)
+- [Player Movement](#player-movement)
+- [Animation](#animation)
+- [Camera System](#camera-system)
+- [Lighting](#lighting)
+- [Materials](#materials)
+- [Visual Effects](#visual-effects)
+- [Audio](#audio)
+- [AI Opponents](#ai-opponents)
+- [Game Modes](#game-modes)
+- [Controls](#controls)
+- [Rules](#rules)
+- [Difficulty System](#difficulty-system)
+- [Performance Targets](#performance-targets)
+- [Adaptive Graphics](#adaptive-graphics)
+- [Technology Stack](#technology-stack)
+- [Project Architecture](#project-architecture)
+- [Suggested Folder Structure](#suggested-folder-structure)
+- [Installation](#installation)
+- [Development](#development)
+- [Configuration](#configuration)
+- [Physics Configuration](#physics-configuration)
+- [Graphics Configuration](#graphics-configuration)
+- [Debugging](#debugging)
+- [Testing](#testing)
+- [Accessibility](#accessibility)
+- [Browser Support](#browser-support)
+- [Development Rules](#development-rules)
+- [Milestones](#milestones)
+- [Future Features](#future-features)
+- [License](#license)
 
 ---
 
@@ -2587,3 +2587,23 @@ Built with Three.js.
 Built to push the browser.
 
 Built to make every rally different.
+
+---
+
+# Foundation implementation
+
+The first continuation-ready implementation now lives under src/.
+
+It includes:
+
+- a 240 Hz fixed-step simulation clock;
+- SI-unit ball flight, drag, Magnus force, spin decay, bounce, net, edge, and paddle contact seams;
+- typed rally, serve, scoring, match, training, AI, and placement systems;
+- procedural Three.js table, arena, lighting, paddle, ball, camera, and shader adapters;
+- keyboard, pointer, and gamepad input;
+- replay snapshots, telemetry, persistence, accessibility, plugins, rollback buffers, and worker protocols;
+- ECS, animation, footwork, calibration, performance, and validation foundations.
+
+Read docs/FOUNDATION_HANDOFF.md first when continuing the implementation. It states the coordinate contract, what is implemented, what remains intentionally approximate, and the recommended next sequence.
+
+The procedural scene is deliberately asset-free so future developers can run and inspect the foundation before adding authored models, textures, audio, or online services.
