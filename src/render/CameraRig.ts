@@ -10,9 +10,9 @@ export class CameraRig {
   private readonly target = new THREE.Vector3(0, 0.8, 0);
   private readonly desiredTarget = new THREE.Vector3(0, 0.8, 0);
   private readonly desiredPosition = new THREE.Vector3(3.2, 2.2, 4.8);
-  private yaw = 0.58;
+  private yaw = 0.42;
   private pitch = 0.22;
-  private distance = 5.7;
+  private distance = 4.85;
   private shake = 0;
   private elapsed = 0;
 
@@ -52,13 +52,13 @@ export class CameraRig {
 
   private updateCompetitive(ball: BallState, dt: number, reducedMotion: boolean): void {
     this.desiredTarget.set(0, 0.86, reducedMotion ? 0 : ball.position.z * 0.08);
-    this.distance = 5.8;
+    this.distance = 4.85;
     this.desiredPosition.set(
       Math.sin(this.yaw) * this.distance,
-      1.85 + Math.sin(this.pitch) * 1.5,
-      Math.cos(this.yaw) * this.distance + 0.8
+      1.7 + Math.sin(this.pitch) * 1.5,
+      Math.cos(this.yaw) * this.distance + 0.65
     );
-    this.camera.fov = damp(this.camera.fov, reducedMotion ? 42 : 42 + ball.speed() * 0.12, 4, dt);
+    this.camera.fov = damp(this.camera.fov, reducedMotion ? 40 : 40 + ball.speed() * 0.1, 4, dt);
     this.camera.updateProjectionMatrix();
   }
 

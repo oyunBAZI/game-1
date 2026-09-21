@@ -15,6 +15,13 @@ export interface PhysicsStepResult {
   outReason: string | null;
 }
 
+type ContactCandidate = {
+  contact: CollisionContact;
+  kind: "paddle" | "net" | "table";
+  side?: Side;
+  edge?: boolean;
+};
+
 export class PhysicsWorld {
   readonly state: WorldState;
   readonly table: TableCollider;
@@ -88,10 +95,7 @@ export class PhysicsWorld {
     this.contactSides.clear();
     let outReason: string | null = null;
     if (simulateBall) {
-      this.integrator.integrate(world.ball, dt);
-      this.detectAndResolvePaddles();
-      this.detectAndResolveNet();
-      this.detectAndResolveTable();
+      this.advanceBall(dt);
       outReason = this.detectOut();
     }
     world.finishStep(dt);
@@ -99,57 +103,84 @@ export class PhysicsWorld {
     return { contacts: [...this.contacts], ballOut: Boolean(outReason), outReason };
   }
 
-  private detectAndResolvePaddles(): void {
+  /** Resolve the first surface hit in time order, then fly through the rest of the step. */
+  private advanceBall(dt: number): void {
     const ball = this.state.ball;
+    const frameStart = ball.previousPosition.clone();
+    let remaining = dt;
+    // Six distinct surfaces per tick is more than a ball can physically reach.
+    for (let iteration = 0; iteration < 6 && remaining > 1e-7; iteration += 1) {
+      const start = ball.position.clone();
+      const velocity = ball.velocity.clone();
+      const spin = ball.angularVelocity.clone();
+      ball.previousPosition.copy(start);
+      ball.force.set(0, 0, 0);
+      ball.torque.set(0, 0, 0);
+      this.integrator.integrate(ball, remaining);
+      const candidate = this.firstContact(1 - remaining / dt);
+      if (!candidate) { remaining = 0; break; }
+
+      const fraction = Math.max(0, Math.min(1, candidate.contact.timeOfImpact));
+      const elapsed = remaining * fraction;
+      ball.position.copy(start);
+      ball.velocity.copy(velocity);
+      ball.angularVelocity.copy(spin);
+      ball.force.set(0, 0, 0);
+      ball.torque.set(0, 0, 0);
+      if (elapsed > 0) this.integrator.integrate(ball, elapsed);
+      this.resolve(candidate);
+      remaining -= elapsed;
+      // Make progress after a pre-existing overlap without advancing a visible
+      // amount of game time or allowing the same surface to fire twice.
+      if (elapsed < 1e-7) remaining = Math.max(0, remaining - 1e-7);
+    }
+    ball.previousPosition.copy(frameStart); // interpolation must span the whole fixed tick
+  }
+
+  private firstContact(startFraction: number): ContactCandidate | null {
+    const ball = this.state.ball;
+    const candidates: ContactCandidate[] = [];
     for (const side of ["home", "away"] as Side[]) {
+      const contact = this.paddles.detect(ball, this.state.paddles[side], startFraction);
+      if (contact) candidates.push({ contact, kind: "paddle", side });
+    }
+    const net = this.net.detect(ball);
+    if (net) candidates.push({ contact: net, kind: "net" });
+    const table = this.table.detect(ball);
+    if (table) candidates.push({ contact: table.contact, kind: "table", edge: table.surface === "edge" });
+    return candidates
+      .filter(({ contact }) => this.lastContactTick.get(contact.surfaceId) !== this.state.tick)
+      .sort((a, b) => a.contact.timeOfImpact - b.contact.timeOfImpact)[0] ?? null;
+  }
+
+  private resolve(candidate: ContactCandidate): void {
+    const ball = this.state.ball;
+    const { contact } = candidate;
+    const normal = Vec3.from(contact.normal);
+    if (candidate.kind === "paddle") {
+      const side = candidate.side!;
       const paddle = this.state.paddles[side];
-      const contact = this.paddles.detect(ball, paddle);
-      if (!contact) continue;
-      const previousTick = this.lastContactTick.get(contact.surfaceId);
-      if (previousTick === this.state.tick) continue;
-      resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side]);
-      const normal = Vec3.from(contact.normal);
-      ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
+      resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side], normal);
       ball.lastContact = "paddle";
       ball.lastContactSide = side;
       ball.lastHitTick = this.state.tick;
-      ball.contactCount += 1;
-      this.contacts.push(contact);
       this.contactSides.add(side);
-      this.lastContactTick.set(contact.surfaceId, this.state.tick);
+    } else if (candidate.kind === "net") {
+      const before = ball.velocity.clone();
+      resolveNetContact(ball, normal, this.tuning.netRestitution);
+      this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
+      ball.lastContact = "net";
+    } else {
+      resolveTableBounce(ball, normal, candidate.edge
+        ? { ...this.tuning.table, restitution: this.tuning.table.edgeRestitution }
+        : this.tuning.table);
+      ball.grounded = true;
+      ball.lastContact = candidate.edge ? "edge" : "table";
     }
-  }
-
-  private detectAndResolveNet(): void {
-    const ball = this.state.ball;
-    const contact = this.net.detect(ball);
-    if (!contact) return;
-    const previousTick = this.lastContactTick.get(contact.surfaceId);
-    if (previousTick === this.state.tick) return;
-    const before = ball.velocity.clone();
-    const normal = Vec3.from(contact.normal);
-    resolveNetContact(ball, normal, this.tuning.netRestitution);
-    this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
     ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
-    ball.lastContact = "net";
     ball.contactCount += 1;
     this.contacts.push(contact);
     this.lastContactTick.set(contact.surfaceId, this.state.tick);
-  }
-
-  private detectAndResolveTable(): void {
-    const ball = this.state.ball;
-    const collision = this.table.detect(ball);
-    if (!collision) return;
-    const previousTick = this.lastContactTick.get(collision.contact.surfaceId);
-    if (previousTick === this.state.tick) return;
-    resolveTableBounce(ball, collision.normal, this.tuning.table);
-    ball.position.copy(collision.contact.point).addScaled(collision.normal, ball.radius + 0.0005);
-    ball.grounded = true;
-    ball.lastContact = collision.surface === "top" ? "table" : "edge";
-    ball.contactCount += 1;
-    this.contacts.push(collision.contact);
-    this.lastContactTick.set(collision.contact.surfaceId, this.state.tick);
   }
 
   private detectOut(): string | null {

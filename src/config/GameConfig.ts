@@ -140,7 +140,7 @@ export function createDefaultConfig(): GameConfig {
       shadowMapSize: 2048,
       toneMappingExposure: 1.08,
       pixelRatioCap: 2,
-      showTrails: false,
+      showTrails: true,
       reducedMotion: false
     },
     controls: {

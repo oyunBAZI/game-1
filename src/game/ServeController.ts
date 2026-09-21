@@ -100,6 +100,13 @@ export class ServeController {
     this.pointNumber += 1;
   }
 
+  reset(): void {
+    this.current = null;
+    this.served = false;
+    this.tossTime = 0;
+    this.pointNumber = 0;
+  }
+
   plan(): ServePlan | null {
     return this.current ? { ...this.current, spin: this.current.spin.clone() } : null;
   }

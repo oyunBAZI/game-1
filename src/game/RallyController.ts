@@ -59,6 +59,18 @@ export class RallyController {
     this.state.bouncesOnExpected = 0;
   }
 
+  abort(): void {
+    this.state.active = false;
+    this.state.server = null;
+    this.state.lastHitter = null;
+    this.state.touches = 0;
+    this.state.lastContact = null;
+    this.state.pointReason = null;
+    this.state.serveStage = "own";
+    this.state.expectedBounce = null;
+    this.state.bouncesOnExpected = 0;
+  }
+
   onContact(contact: CollisionContact & { tick: number }): void {
     if (!this.state.active) return;
     if (contact.kind === "paddle" && contact.side) {

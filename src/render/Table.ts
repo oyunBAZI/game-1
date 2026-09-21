@@ -19,10 +19,28 @@ export class TableVisual {
     this.top.receiveShadow = true;
     this.group.add(this.top);
     this.addBoundaryLines();
+    this.addEdgeProfile();
     this.addUnderframe();
     this.addLegs();
     this.netTexture = this.makeNetTexture();
     this.netSurface = this.addNet();
+  }
+
+  private addEdgeProfile(): void {
+    const laminate = new THREE.MeshStandardMaterial({ color: 0x816650, roughness: 0.64 });
+    const inset = new THREE.MeshStandardMaterial({ color: 0x090f16, roughness: 0.3, metalness: 0.24 });
+    for (const z of [-TABLE.length / 2, TABLE.length / 2]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width, 0.005, 0.003), laminate);
+      strip.position.set(0, TABLE.top - TABLE.thickness * 0.58, z);
+      const gasket = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width, 0.004, 0.003), inset);
+      gasket.position.set(0, TABLE.top - TABLE.thickness * 0.91, z);
+      this.group.add(strip, gasket);
+    }
+    for (const x of [-TABLE.width / 2, TABLE.width / 2]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.005, TABLE.length), laminate);
+      strip.position.set(x, TABLE.top - TABLE.thickness * 0.58, 0);
+      this.group.add(strip);
+    }
   }
 
   private addBoundaryLines(): void {
@@ -74,6 +92,12 @@ export class TableVisual {
       crossbar.castShadow = true;
       this.group.add(crossbar);
     }
+    for (const x of [-0.42, 0.42]) {
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.035, TABLE.length * 0.75), this.materials.metal);
+      spine.position.set(x, TABLE.top - 0.24, 0);
+      spine.castShadow = true;
+      this.group.add(spine);
+    }
     for (const z of [-TABLE.length / 2 + 0.018, TABLE.length / 2 - 0.018]) {
       const apron = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width, 0.047, 0.013), this.materials.tableEdge);
       apron.position.set(0, TABLE.top - 0.038, z);
@@ -102,6 +126,26 @@ export class TableVisual {
       );
       foot.position.set(x, 0.018, z);
       this.legs.add(foot);
+      const rubber = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.047, 0.047, 0.025, 12),
+        this.materials.tableEdge
+      );
+      rubber.position.set(x, 0.02, z);
+      rubber.scale.z = 0.85;
+      this.legs.add(rubber);
+    }
+    // Diagonal braces make the freestanding table read as actual equipment.
+    for (const x of [-0.56, 0.56]) {
+      for (const z of [-0.96, 0.96]) {
+        const start = new THREE.Vector3(x, 0.36, z);
+        const end = new THREE.Vector3(x * 0.52, TABLE.top - 0.16, z * 0.52);
+        const direction = end.clone().sub(start);
+        const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, direction.length(), 8), this.materials.metal);
+        brace.position.copy(start).add(end).multiplyScalar(0.5);
+        brace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+        brace.castShadow = true;
+        this.legs.add(brace);
+      }
     }
     this.group.add(this.legs);
   }
@@ -142,6 +186,9 @@ export class TableVisual {
       const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.042), this.materials.metal);
       clamp.position.set(x, TABLE.top + TABLE.netHeight + 0.012, 0);
       this.net.add(clamp);
+      const mount = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.024, 0.078), this.materials.metal);
+      mount.position.set(x, TABLE.top + 0.003, 0);
+      this.net.add(mount);
     }
     const netGeometry = new THREE.PlaneGeometry(TABLE.width, TABLE.netHeight, 12, 4);
     const netMesh = new THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>(
@@ -162,6 +209,12 @@ export class TableVisual {
     const band = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width + 0.04, 0.012, 0.014), this.materials.tableLine);
     band.position.set(0, TABLE.top + TABLE.netHeight + 0.004, 0);
     this.net.add(netMesh, band);
+    for (const x of [-TABLE.width / 2 - 0.018, TABLE.width / 2 + 0.018]) {
+      const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.038, 8), this.materials.tableLine);
+      cable.position.set(x, TABLE.top + TABLE.netHeight, 0);
+      cable.rotation.z = Math.PI / 2;
+      this.net.add(cable);
+    }
     this.group.add(this.net);
     return netMesh;
   }

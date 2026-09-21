@@ -5,12 +5,22 @@ import type { MaterialPalette } from "./ProceduralMaterials";
 export class ArenaVisual {
   readonly group = new THREE.Group();
   private readonly signageTexture: THREE.CanvasTexture;
+  private readonly scoreboardTexture: THREE.CanvasTexture;
+  private readonly scoreboardContext: CanvasRenderingContext2D | null;
+  private displayedScore = "";
 
   constructor(materials: MaterialPalette) {
     this.group.name = "arena-visual";
     this.addFloor(materials);
     this.addWalls(materials);
     this.addCourtMarkers(materials);
+    const scoreCanvas = document.createElement("canvas");
+    scoreCanvas.width = 1024;
+    scoreCanvas.height = 320;
+    this.scoreboardContext = scoreCanvas.getContext("2d");
+    this.scoreboardTexture = new THREE.CanvasTexture(scoreCanvas);
+    this.scoreboardTexture.colorSpace = THREE.SRGBColorSpace;
+    this.updateScore(0, 0, "READY");
     this.addCeilingRig(materials);
     this.signageTexture = this.createSignage();
     this.addBarriers(materials);
@@ -29,6 +39,25 @@ export class ArenaVisual {
     underlay.rotation.x = -Math.PI / 2;
     underlay.position.y = -0.006;
     this.group.add(underlay);
+    // The blue competition mat sits on top of the concrete arena floor.
+    const mat = new THREE.Mesh(
+      new THREE.PlaneGeometry(7.5, 9.1),
+      new THREE.MeshStandardMaterial({
+        color: 0x12556e, roughness: 0.8, metalness: 0.02,
+        bumpMap: materials.floor.bumpMap, bumpScale: 0.001
+      })
+    );
+    mat.rotation.x = -Math.PI / 2;
+    mat.position.y = 0.003;
+    mat.receiveShadow = true;
+    this.group.add(mat);
+    const trim = new THREE.Mesh(
+      new THREE.PlaneGeometry(7.62, 9.22),
+      new THREE.MeshBasicMaterial({ color: 0x63a9b1, side: THREE.DoubleSide })
+    );
+    trim.rotation.x = -Math.PI / 2;
+    trim.position.y = 0.001;
+    this.group.add(trim);
   }
 
   private addWalls(materials: MaterialPalette): void {
@@ -47,17 +76,21 @@ export class ArenaVisual {
   }
 
   private addCourtMarkers(materials: MaterialPalette): void {
-    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x31545d, transparent: true, opacity: 0.52 });
-    for (const z of [-4.2, -2.7, 2.7, 4.2]) {
-      const line = new THREE.Mesh(new THREE.BoxGeometry(12.5, 0.004, 0.018), lineMaterial);
-      line.position.set(0, 0.004, z);
+    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x7cb6bd, transparent: true, opacity: 0.5 });
+    for (const z of [-4.25, -2.7, 2.7, 4.25]) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.001, 0.016), lineMaterial);
+      line.position.set(0, 0.005, z);
       this.group.add(line);
     }
-    for (const x of [-3.8, 3.8]) {
-      const line = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.004, 10.5), lineMaterial);
+    for (const x of [-3.55, 3.55]) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.001, 8.5), lineMaterial);
       line.position.set(x, 0.005, 0);
       this.group.add(line);
     }
+    const centerMark = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.765, 64), lineMaterial);
+    centerMark.rotation.x = -Math.PI / 2;
+    centerMark.position.y = 0.006;
+    this.group.add(centerMark);
   }
 
   private addCeilingRig(materials: MaterialPalette): void {
@@ -79,8 +112,14 @@ export class ArenaVisual {
       new THREE.BoxGeometry(2.8, 0.9, 0.16),
       materials.tableEdge
     );
-    scoreboard.position.set(0, 3.5, -5.55);
+    scoreboard.position.set(0, 2.98, -5.55);
     this.group.add(scoreboard);
+    const screen = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.68, 0.77),
+      new THREE.MeshBasicMaterial({ map: this.scoreboardTexture, toneMapped: false })
+    );
+    screen.position.set(0, 2.98, -5.45);
+    this.group.add(screen);
   }
 
   private createSignage(): THREE.CanvasTexture {
@@ -153,6 +192,30 @@ export class ArenaVisual {
     }
     seats.receiveShadow = true;
     this.group.add(seats);
+    const heads = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.105, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0x9b9b9b, roughness: 0.95 }), 44
+    );
+    const spectators = new THREE.InstancedMesh(
+      new THREE.CapsuleGeometry(0.13, 0.18, 3, 6),
+      new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.92 }), 44
+    );
+    const colors = [0x244b5c, 0x6d635c, 0x364251, 0x2d676c, 0x604c48];
+    for (let i = 0; i < 44; i += 1) {
+      const col = i % 22;
+      const row = Math.floor(i / 22);
+      dummy.position.set((col - 10.5) * 0.47, 0.94 + row * 0.28, -4.1 - row * 0.66);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      heads.setMatrixAt(i, dummy.matrix);
+      heads.setColorAt(i, new THREE.Color(i % 4 === 0 ? 0x715341 : 0xb4896a));
+      dummy.position.y -= 0.25;
+      dummy.scale.set(1, 0.88, 0.9);
+      dummy.updateMatrix();
+      spectators.setMatrixAt(i, dummy.matrix);
+      spectators.setColorAt(i, new THREE.Color(colors[(i * 17 + row) % colors.length]));
+    }
+    this.group.add(heads, spectators);
     const glow = new THREE.Mesh(
       new THREE.BoxGeometry(8.2, 0.04, 0.03),
       new THREE.MeshBasicMaterial({ color: 0x49b8b8 })
@@ -163,5 +226,32 @@ export class ArenaVisual {
 
   dispose(): void {
     this.signageTexture.dispose();
+    this.scoreboardTexture.dispose();
+  }
+
+  updateScore(home: number, away: number, phase: string): void {
+    const key = `${home}:${away}:${phase}`;
+    if (key === this.displayedScore) return;
+    this.displayedScore = key;
+    const ctx = this.scoreboardContext;
+    if (!ctx) return;
+    ctx.fillStyle = "#071b27";
+    ctx.fillRect(0, 0, 1024, 320);
+    ctx.fillStyle = "#36b9b5";
+    ctx.fillRect(0, 0, 1024, 11);
+    ctx.fillStyle = "#92c5c5";
+    ctx.textAlign = "center";
+    ctx.font = "600 32px Arial, sans-serif";
+    ctx.fillText(`COURT 01   /   ${phase.toUpperCase()}`, 512, 57);
+    ctx.font = "bold 38px Arial, sans-serif";
+    ctx.fillText("HOME", 260, 116);
+    ctx.fillText("AWAY", 764, 116);
+    ctx.fillStyle = "#f2f9f6";
+    ctx.font = "bold 158px Arial, sans-serif";
+    ctx.fillText(String(home).padStart(2, "0"), 260, 266);
+    ctx.fillText(String(away).padStart(2, "0"), 764, 266);
+    ctx.fillStyle = "#39aaa9";
+    ctx.fillRect(510, 91, 4, 184);
+    this.scoreboardTexture.needsUpdate = true;
   }
 }

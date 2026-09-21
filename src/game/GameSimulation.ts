@@ -68,6 +68,7 @@ export class GameSimulation implements FixedStepParticipant {
     this.running = true;
     this.pendingServe = false;
     this.world.reset();
+    this.ai.reset();
     this.match.start("home");
   }
 
@@ -89,7 +90,8 @@ export class GameSimulation implements FixedStepParticipant {
     const result = this.world.fixedStep(dt, () => {
       this.playerController.update(dt);
       this.world.setDesiredSpin("home", this.playerController.desiredSpin());
-      const aiAction = this.ai.update(dt, this.world.state.ball, this.world.state.players.away, this.world.state.paddles.away);
+      const aiAction = this.ai.update(dt, this.world.state.ball, this.world.state.players.away,
+        this.world.state.paddles.away, this.world.state.players.home);
       this.world.state.players.away.velocity.copy(aiAction.move).multiplyScalar(this.config.difficulty.movementSpeed);
       const paddle = this.world.state.paddles.away;
       this.world.paddles.placeForInput(paddle, aiAction.paddleTarget, aiAction.paddleNormal, dt, 4 + this.config.difficulty.movementSpeed);

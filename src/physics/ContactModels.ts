@@ -66,12 +66,13 @@ export function resolvePaddleContact(
   ball: BallState,
   paddle: PaddleState,
   rubber: RubberProfile,
-  desiredSpin: Vec3
+  desiredSpin: Vec3,
+  surfaceNormal = paddle.normal
 ): ContactResponse {
   const before = ball.velocity.clone();
   const spinBefore = ball.angularVelocity.clone();
   const energyBefore = kineticEnergy(ball);
-  const contactNormal = paddle.normal.clone().normalize();
+  const contactNormal = surfaceNormal.clone().normalize();
   const paddleVelocity = paddle.velocityAt(ball.position);
   const relative = ball.velocity.clone().sub(paddleVelocity);
   const approach = relative.dot(contactNormal);

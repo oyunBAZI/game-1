@@ -27,14 +27,17 @@ Each ball step:
 3. add gravity, drag, and Magnus forces;
 4. integrate linear velocity and position;
 5. integrate angular velocity;
-6. perform continuous collision tests;
-7. resolve paddle, net and table contacts in explicit order;
-8. clamp impossible runaway values;
-9. emit the contact event after state is coherent.
+6. sweep the ball against the moving paddle faces, net, and table;
+7. select the earliest time of impact and resolve that contact;
+8. integrate the remaining portion of the fixed step and repeat if it hits another surface;
+9. clamp impossible runaway values;
+10. restore the frame-start position for render interpolation and emit ordered contact events after state is coherent.
 
 ## Contact priority
 
-The current implementation checks paddle, net, then table and edge. Swept tests prevent tunneling for fast motion, but multiple contacts in the same fixed step are not yet sorted by time of impact. A future collision coordinator should resolve the earliest candidate first.
+PhysicsWorld compares all candidate contact times, resolves the earliest, and continues through the remaining time. A surface may fire once per fixed tick. PaddleCollider works in the moving blade's frame and accepts either rubber face. Edge contacts use the table's lower edge restitution. Contact position and order are authoritative for RallyController.
+
+BallPredictor uses the same integrator and table/net contact responses for AI planning. It does not include future paddle strokes or player movement, so its path remains an estimate. Calibration of coefficients against measured shots is still needed.
 
 ## Spin
 

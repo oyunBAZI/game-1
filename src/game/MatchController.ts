@@ -49,6 +49,8 @@ export class MatchController {
   }
 
   start(server: Side = "home"): void {
+    this.serve.reset();
+    this.rally.abort();
     this.scoreboard.resetMatch();
     this.initialServer = server;
     this.nextServer = server;
