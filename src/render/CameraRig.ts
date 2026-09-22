@@ -25,6 +25,11 @@ export class CameraRig {
     if (this.mode === "competitive") this.updateCompetitive(ball, dt, reducedMotion);
     else if (this.mode === "broadcast") this.updateBroadcast(ball, dt);
     else if (this.mode === "ball") this.updateBall(ball, dt);
+    // Preserve the court's horizontal framing on portrait displays.
+    if ((this.mode === "competitive" || this.mode === "broadcast") && this.camera.aspect < 1) {
+      this.desiredPosition.sub(this.desiredTarget)
+        .multiplyScalar(1 / Math.max(0.25, this.camera.aspect)).add(this.desiredTarget);
+    }
     this.target.lerp(this.desiredTarget, 1 - Math.exp(-(reducedMotion ? 3 : 8) * dt));
     this.camera.position.x = damp(this.camera.position.x, this.desiredPosition.x, 7, dt);
     this.camera.position.y = damp(this.camera.position.y, this.desiredPosition.y, 7, dt);

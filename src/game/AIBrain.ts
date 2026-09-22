@@ -29,7 +29,7 @@ export class AIBrain {
     private readonly side: Side,
     private readonly profile: DifficultyProfile,
     tuning: PhysicsTuning,
-    seed = 911
+    private readonly seed = 911
   ) {
     this.random = new Random(seed + (side === "home" ? 1 : 2));
     this.predictor = new BallPredictor(tuning);
@@ -43,7 +43,7 @@ export class AIBrain {
     };
   }
 
-  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState): AIAction {
+  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState, receivedBounce = false): AIAction {
     this.reactionTimer -= dt;
     if (this.reactionTimer > 0) return this.lastAction;
     this.reactionTimer = this.profile.reactionSeconds * this.random.range(0.82, 1.18);
@@ -55,7 +55,7 @@ export class AIBrain {
     this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
     const sign = this.side === "away" ? -1 : 1;
-    let bouncedOnOurHalf = false;
+    let bouncedOnOurHalf = receivedBounce;
     const playable: LandingPrediction["points"] = [];
     for (const point of this.prediction.points) {
       if (point.bounced && point.position.z * sign > 0) {
@@ -114,6 +114,15 @@ export class AIBrain {
       confidence: 0.25
     };
     return this.lastAction;
+  }
+
+  reset(): void {
+    this.random.setSeed(this.seed + (this.side === "home" ? 1 : 2));
+    this.reactionTimer = 0;
+    this.prediction = null;
+    this.target.set(0, 1, this.side === "home" ? 1.15 : -1.15);
+    this.lastAction.swing = 0;
+    this.lastAction.move.set(0, 0, 0);
   }
 
   predictionPoints(): Vec3[] {

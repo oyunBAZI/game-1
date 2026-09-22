@@ -102,6 +102,10 @@ export class RallyController {
       return;
     }
     if (contact.kind === "table" || contact.kind === "edge") {
+      if (contact.normal.y <= 0) {
+        this.onOut("table-side");
+        return;
+      }
       const side: Side = contact.point.z >= 0 ? "home" : "away";
       if (side !== this.state.expectedBounce) {
         this.end(oppositeSide(this.state.lastHitter ?? this.state.server ?? side), "wrong-side-bounce");

@@ -37,6 +37,14 @@ export function createMaterialPalette(): MaterialPalette {
   const floor = new THREE.MeshStandardMaterial({
     color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003
   });
+  const rubberGrain = grain.clone();
+  rubberGrain.repeat.set(9, 9);
+  rubberGrain.needsUpdate = true;
+  const woodGrain = createCanvasNoiseTexture(128);
+  woodGrain.repeat.set(2, 30);
+  const rubber = (color: number) => new THREE.MeshStandardMaterial({
+    color, roughness: 0.86, bumpMap: rubberGrain, bumpScale: 0.00015
+  });
   return {
     table,
     tableEdge: standard(0x16272f, 0.43, 0.22),
@@ -45,9 +53,9 @@ export function createMaterialPalette(): MaterialPalette {
     wall: standard(0x101d27, 0.78),
     net: standard(0x0c1519, 0.85),
     ball: new THREE.MeshPhysicalMaterial({ color: 0xfff5d8, roughness: 0.36, clearcoat: 0.2 }),
-    rubberRed: standard(0xb02433, 0.8),
-    rubberBlack: standard(0x151b22, 0.78),
-    wood: standard(0x915c37, 0.59),
+    rubberRed: rubber(0xb02433),
+    rubberBlack: rubber(0x151b22),
+    wood: new THREE.MeshStandardMaterial({ color: 0xb28753, roughness: 0.59, bumpMap: woodGrain, bumpScale: 0.0003 }),
     metal: standard(0x8998a0, 0.3, 0.72),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };

@@ -9,8 +9,12 @@ import { MatchController } from "../game/MatchController";
 import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
-import { resolveTableBounce } from "../physics/ContactModels";
+import { resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
 import { BallState } from "../physics/State";
+import { TableCollider } from "../physics/TableCollider";
+import { AIBrain } from "../game/AIBrain";
+import { createDefaultConfig } from "../config/GameConfig";
+import { solveTwoBone } from "../render/TwoBoneIK";
 import { PlayerVisual } from "../render/Player";
 import { PaddleVisual } from "../render/Paddle";
 import { TableVisual } from "../render/Table";
@@ -173,6 +177,7 @@ function testPlayableSimulation(): void {
     simulation.world.state.ball.position.z].every(Number.isFinite), "ball position must remain finite");
   assert(scoreChanges > 0, "app event bus must receive simulation events");
   simulation.restart();
+  assert(simulation.stats.sides.home.pointsWon === 0 && simulation.stats.sides.away.hits === 0, "restart must clear statistics");
   assert(simulation.match.phase() === "serve" && simulation.match.scoreboard.score("home") === 0,
     "session restart must reset both match rules and ball state");
   assert(!simulation.match.serve.isActive() && !simulation.match.rally.state.active,
@@ -222,10 +227,87 @@ function testModelConstruction(): void {
   arena.dispose(); player.dispose(); racket.dispose(); table.dispose();
 }
 
+function testSlabAndContactBudget(): void {
+  const collider = new TableCollider();
+  const ball = new BallState();
+  // A lateral hit below the top was invisible to the old downward-only test.
+  for (const sign of [-1, 1]) {
+    ball.reset(new Vec3(sign * (TABLE.width / 2 + 0.10), TABLE.top - 0.014, 0.5), new Vec3(-sign * 20, 0, 0));
+    ball.position.x -= sign * 0.20;
+    const hit = collider.detect(ball);
+    assert(hit?.surface === "side" && hit.normal.x * sign > 0.99,
+      "horizontal ball must hit either vertical side of the slab");
+    assert(Math.abs(hit.contact.timeOfImpact - 0.4) < 1e-6, "side TOI must match analytic distance");
+  }
+  ball.reset(new Vec3(TABLE.width / 2 + 0.015, TABLE.top + 0.08, 0.5), new Vec3(0, -10, 0));
+  ball.position.y -= 0.12;
+  const edge = collider.detect(ball);
+  assert(edge?.surface === "edge" && edge.normal.x > 0.7 && edge.normal.y > 0.6,
+    "a real rounded edge hit needs a geometric normal");
+  ball.reset(new Vec3(TABLE.width / 2 + 0.019, TABLE.top + 0.08, TABLE.length / 2 + 0.019), new Vec3(0, -10, 0));
+  ball.position.y -= 0.12;
+  assert(collider.detect(ball) === null, "expanded box corners must not create phantom sphere hits");
+  ball.reset(new Vec3(0, TABLE.top - 0.10, 0.5), new Vec3(0, 10, 0));
+  ball.position.y += 0.12;
+  assert(collider.detect(ball)?.normal.y === -1, "rising balls must hit the underside");
+
+  const world = new PhysicsWorld(new EventBus());
+  const paddle = world.state.paddles.home;
+  paddle.normal.set(0, 0, -1);
+  paddle.velocity.set(0, 0, 0); paddle.swingVelocity.set(0, 0, 0);
+  for (let sample = 0; sample < 100; sample += 1) {
+    ball.reset(new Vec3(0, 1, 1), new Vec3(Math.sin(sample) * 4, Math.cos(sample) * 3, 1 + sample / 10));
+    ball.angularVelocity.set(Math.sin(sample * 3) * 300, Math.cos(sample * 2) * 200, 30);
+    const response = resolvePaddleContact(ball, paddle, world.tuning.rubber, new Vec3());
+    assert(response.energyAfter <= response.energyBefore + 1e-9,
+      "passive stationary rubber cannot add total kinetic energy");
+  }
+  ball.reset(new Vec3(0, 1, 1), new Vec3(0, 0, 0.000001));
+  resolvePaddleContact(ball, paddle, world.tuning.rubber, new Vec3(1000, 0, 0));
+  assert(ball.angularVelocity.length() < 0.001,
+    "spin control cannot inject large spin into a grazing, near-zero-force contact");
+}
+
+function testSideScoringAndAI(): void {
+  const events = new EventBus();
+  const world = new PhysicsWorld(events);
+  const score = new Scoreboard(events, TRAINING_RULES);
+  const rally = new RallyController(events, world, score);
+  events.emit("rally:start", { server: "home" });
+  events.emit("physics:contact", contact("table", "home"));
+  const side = contact("edge", "away");
+  side.normal = { x: 1, y: 0, z: 0 };
+  events.emit("physics:contact", side);
+  assert(score.score("away") === 1 && rally.state.pointReason === "service-table-side",
+    "a serve into the receiver's vertical side is a fault");
+  events.emit("rally:start", { server: "home" });
+  events.emit("physics:contact", contact("table", "home"));
+  events.emit("physics:contact", contact("table", "away"));
+  events.emit("physics:contact", side);
+  assert(score.score("home") === 1, "side hit after a legal bounce awards the last hitter");
+  rally.dispose();
+
+  const config = createDefaultConfig();
+  const ai = new AIBrain("away", config.difficulty, world.tuning);
+  world.state.ball.reset(new Vec3(0, 0.95, -0.70), new Vec3(0, 1.2, -3));
+  const action = ai.update(1 / 240, world.state.ball, world.state.players.away, world.state.paddles.away, true);
+  assert(action.swing > 0 && action.paddleTarget.z < -0.7,
+    "AI must intercept an already-bounced ball before its next bounce");
+  const root = new THREE.Vector3(0, 1, 0);
+  const joint = new THREE.Vector3(), end = new THREE.Vector3();
+  for (const target of [new THREE.Vector3(0.3, 0.7, 0.1), new THREE.Vector3(5, 5, 5), root.clone()]) {
+    solveTwoBone(root, target, new THREE.Vector3(1, 1, 0), 0.34, 0.33, joint, end);
+    assert(Math.abs(root.distanceTo(joint) - 0.34) < 1e-6 && Math.abs(joint.distanceTo(end) - 0.33) < 1e-6,
+      "IK must preserve both limb lengths for reachable, distant and coincident targets");
+  }
+}
+
 export function runGameTests(): void {
   const keyboard = mergeInputFrames(emptyInputFrame(), { swing: 1, serve: true });
   const pointer = mergeInputFrames(keyboard, { swing: 0, serve: false });
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
+  testSlabAndContactBudget();
+  testSideScoringAndAI();
   testTableAndNet();
   testContinuousContactAndSpin();
   testRallyScoring();
