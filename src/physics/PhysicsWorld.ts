@@ -79,6 +79,7 @@ export class PhysicsWorld {
   }
 
   fixedStep(dt: number, controls?: () => void, simulateBall = true): PhysicsStepResult {
+    if (!Number.isFinite(dt) || dt <= 0) throw new RangeError("Physics step must be positive and finite");
     const world = this.state;
     world.beginStep();
     controls?.();
@@ -117,8 +118,12 @@ export class PhysicsWorld {
       if (!hit) { remaining = 0; break; }
       const fraction = Math.max(0, Math.min(1, hit.contact.timeOfImpact));
       ball.position.copy(start).lerp(ball.position, fraction);
-      ball.velocity.copy(startVelocity).lerp(ball.velocity, fraction);
-      ball.angularVelocity.copy(startSpin).lerp(ball.angularVelocity, fraction);
+      const impactPosition = ball.position.clone();
+      ball.position.copy(start);
+      ball.velocity.copy(startVelocity);
+      ball.angularVelocity.copy(startSpin);
+      this.integrator.integrate(ball, remaining * fraction);
+      ball.position.copy(impactPosition);
       const globalTime = (elapsed + remaining * fraction) / dt;
       this.resolveHit(hit);
       hit.contact.timeOfImpact = globalTime;
@@ -201,6 +206,8 @@ export class PhysicsWorld {
 
   restore(snapshot: ReturnType<WorldState["snapshot"]>): void {
     this.state.restore(snapshot);
+    this.lastContactTick.clear();
+    this.contacts.length = 0;
   }
 
   recentContacts(): CollisionContact[] {

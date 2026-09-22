@@ -37,6 +37,19 @@ export function createMaterialPalette(): MaterialPalette {
   const floor = new THREE.MeshStandardMaterial({
     color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003
   });
+  const woodGrain = createSurfaceTexture("wood");
+  const rubberGrain = createSurfaceTexture("rubber");
+  rubberGrain.repeat.set(3, 3);
+  const wood = standard(0xb78a55, 0.55);
+  wood.map = woodGrain;
+  wood.bumpMap = woodGrain;
+  wood.bumpScale = 0.0005;
+  const rubberRed = standard(0xb02433, 0.8);
+  const rubberBlack = standard(0x151b22, 0.78);
+  for (const rubber of [rubberRed, rubberBlack]) {
+    rubber.bumpMap = rubberGrain;
+    rubber.bumpScale = 0.00035;
+  }
   return {
     table,
     tableEdge: standard(0x16272f, 0.43, 0.22),
@@ -45,9 +58,9 @@ export function createMaterialPalette(): MaterialPalette {
     wall: standard(0x101d27, 0.78),
     net: standard(0x0c1519, 0.85),
     ball: new THREE.MeshPhysicalMaterial({ color: 0xfff5d8, roughness: 0.36, clearcoat: 0.2 }),
-    rubberRed: standard(0xb02433, 0.8),
-    rubberBlack: standard(0x151b22, 0.78),
-    wood: standard(0x915c37, 0.59),
+    rubberRed,
+    rubberBlack,
+    wood,
     metal: standard(0x8998a0, 0.3, 0.72),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };
@@ -82,5 +95,30 @@ export function createCanvasNoiseTexture(size = 128): THREE.CanvasTexture {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(10, 10);
+  return texture;
+}
+
+/** Deterministic material-scale patterns; no downloads or random per-frame noise. */
+export function createSurfaceTexture(kind: "fabric" | "wood" | "rubber", size = 128): THREE.DataTexture {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const u = x / size * Math.PI * 2;
+      const v = y / size * Math.PI * 2;
+      let value: number;
+      if (kind === "wood") value = 185 + 30 * Math.sin(u * 10 + Math.sin(v) * 1.6) + 12 * Math.sin(u * 31 + Math.sin(v * 2));
+      else if (kind === "fabric") value = 145 + 34 * Math.sin(u * 16) * Math.cos(v * 16) + 12 * Math.sin(v * 32);
+      else value = 155 + 28 * Math.cos(u * 16) * Math.cos(v * 16);
+      const index = (y * size + x) * 4;
+      data[index] = data[index + 1] = data[index + 2] = Math.round(value);
+      data[index + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
   return texture;
 }

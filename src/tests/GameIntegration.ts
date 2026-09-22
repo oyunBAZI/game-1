@@ -1,3 +1,7 @@
+import { BallIntegrator } from "../physics/Integrator";
+import { AIBrain } from "../game/AIBrain";
+import { DIFFICULTIES } from "../config/GameConfig";
+import { solveTwoBone } from "../render/TwoBoneIK";
 import { EventBus } from "../core/EventBus";
 import { Vec3 } from "../core/Vec3";
 import type { CollisionContact, InputFrame, Side } from "../core/types";
@@ -222,10 +226,71 @@ function testModelConstruction(): void {
   arena.dispose(); player.dispose(); racket.dispose(); table.dispose();
 }
 
+function testFlightAccuracyAndLimbReach(): void {
+  const world = new PhysicsWorld(new EventBus(), { airDensity: 0, angularDrag: 0 });
+  const integrator = new BallIntegrator(world.tuning);
+  const ball = new BallState().reset(new Vec3(0, 2, 0), new Vec3(1, 2, 0));
+  for (let i = 0; i < 60; i += 1) integrator.integrate(ball, 1 / 120);
+  assert(Math.abs(ball.position.y - (2 + 2 * 0.5 - 0.5 * 9.81 * 0.5 ** 2)) < 1e-10,
+    "gravity-only flight must match the analytical parabola");
+  const flight = (step: number): BallState => {
+    const state = new BallState().reset(new Vec3(0, 2, 0), new Vec3(2, 3, -8));
+    state.angularVelocity.set(170, 90, 0);
+    const solver = new BallIntegrator(new PhysicsWorld(new EventBus()).tuning);
+    for (let i = 0; i < Math.round(0.5 / step); i += 1) solver.integrate(state, step);
+    return state;
+  };
+  const reference = flight(1 / 1920).position;
+  const coarse = flight(1 / 120).position.distanceTo(reference);
+  const fine = flight(1 / 240).position.distanceTo(reference);
+  assert(fine < coarse * 0.35, "halving the flight step must show second-order convergence with drag and spin");
+  for (let i = 0; i < 100; i += 1) {
+    const state = new BallState().reset(new Vec3(), new Vec3(Math.sin(i) * 15, -0.1 - i / 10, Math.cos(i) * 12));
+    state.angularVelocity.set(i * 3, -i, i * 2);
+    const response = resolveTableBounce(state, new Vec3(0, 1, 0), world.tuning.table);
+    assert(response.energyAfter <= response.energyBefore + 1e-10, "passive table contact must not generate energy");
+  }
+  ball.velocity.set(0, 0, 0);
+  ball.angularVelocity.set(100, 0, 0);
+  assert(Math.abs(integrator.estimateEnergy(ball) - 0.5 * BALL.inertia * 10000) < 1e-12,
+    "energy estimate must use hollow-shell inertia");
+  for (const target of [new THREE.Vector3(), new THREE.Vector3(0.2, -0.3, 0.1), new THREE.Vector3(8, 0, 0)]) {
+    const root = new THREE.Vector3();
+    const limb = solveTwoBone(root, target, new THREE.Vector3(0, 0, 1), 0.3, 0.29);
+    assert(Math.abs(limb.joint.distanceTo(root) - 0.3) < 1e-8 &&
+      Math.abs(limb.end.distanceTo(limb.joint) - 0.29) < 1e-8,
+      "IK must preserve both bone lengths even for coincident or unreachable targets");
+  }
+  for (const dt of [0, -1, NaN, Infinity]) {
+    const tick = world.state.tick;
+    let threw = false;
+    try { world.fixedStep(dt); } catch { threw = true; }
+    assert(threw && world.state.tick === tick, "invalid steps must be rejected before mutating the world");
+  }
+  const replayWorld = new PhysicsWorld(new EventBus());
+  replayWorld.state.ball.reset(new Vec3(0, 0.82, 0.4), new Vec3(0, -12, 0));
+  const saved = replayWorld.snapshot();
+  const original = replayWorld.fixedStep(1 / 120);
+  const expectedVelocity = replayWorld.state.ball.velocity.clone();
+  replayWorld.restore(saved);
+  const replayed = replayWorld.fixedStep(1 / 120);
+  assert(original.contacts.length > 0 && replayed.contacts.length === original.contacts.length &&
+    replayWorld.state.ball.velocity.distanceTo(expectedVelocity) < 1e-10,
+    "restoring a snapshot must not suppress a contact from the prior timeline");
+  const ai = new AIBrain("away", DIFFICULTIES.elite, world.tuning);
+  ball.reset(new Vec3(0, 0.9, -0.8), new Vec3(0, 2.5, -4));
+  const action = ai.update(1, ball, world.state.players.away, world.state.paddles.away, true);
+  assert(action.swing > 0, "AI must return a ball that has already bounced on its half");
+  ball.velocity.z = 4;
+  const recovery = ai.update(1, ball, world.state.players.away, world.state.paddles.away, false);
+  assert(recovery.swing === 0, "AI must recover when the ball travels away");
+}
+
 export function runGameTests(): void {
   const keyboard = mergeInputFrames(emptyInputFrame(), { swing: 1, serve: true });
   const pointer = mergeInputFrames(keyboard, { swing: 0, serve: false });
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
+  testFlightAccuracyAndLimbReach();
   testTableAndNet();
   testContinuousContactAndSpin();
   testRallyScoring();
