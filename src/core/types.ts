@@ -114,6 +114,7 @@ export interface GameEventMap {
   "physics:out": { side: Side; reason: string };
   "shot:hit": { side: Side; kind: ShotKind; speed: number; spin: Vec3Like };
   "rally:start": { server: Side };
+  "rally:let": { server: Side };
   "rally:end": { winner: Side; reason: string };
   "score:change": { home: number; away: number; gamesHome: number; gamesAway: number };
   "match:phase": { from: GamePhase; to: GamePhase };

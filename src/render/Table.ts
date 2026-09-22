@@ -9,6 +9,7 @@ export class TableVisual {
   private readonly net = new THREE.Group();
   private readonly netSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
   private readonly netTexture: THREE.CanvasTexture;
+  private readonly badgeTexture: THREE.CanvasTexture;
 
   constructor(private readonly materials: MaterialPalette) {
     this.group.name = "table-visual";
@@ -21,6 +22,7 @@ export class TableVisual {
     this.addBoundaryLines();
     this.addUnderframe();
     this.addLegs();
+    this.badgeTexture = this.addBranding();
     this.netTexture = this.makeNetTexture();
     this.netSurface = this.addNet();
   }
@@ -52,6 +54,13 @@ export class TableVisual {
   }
 
   private addUnderframe(): void {
+    const lowerLip = new THREE.Mesh(
+      new THREE.BoxGeometry(TABLE.width + 0.009, 0.009, TABLE.length + 0.009),
+      this.materials.metal
+    );
+    lowerLip.position.y = TABLE.top - TABLE.thickness - 0.004;
+    lowerLip.castShadow = true;
+    this.group.add(lowerLip);
     const railY = TABLE.top - 0.08;
     const longRail = new THREE.Mesh(
       new THREE.BoxGeometry(0.06, 0.06, TABLE.length + 0.12),
@@ -74,11 +83,48 @@ export class TableVisual {
       crossbar.castShadow = true;
       this.group.add(crossbar);
     }
+    for (const x of [-0.59, 0.59]) {
+      for (const z of [-1.09, 1.09]) {
+        const from = new THREE.Vector3(x, 0.39, z);
+        const to = new THREE.Vector3(x * 0.7, TABLE.top - 0.10, z * 0.68);
+        const direction = to.clone().sub(from);
+        const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, direction.length(), 8), this.materials.metal);
+        brace.position.copy(from).add(to).multiplyScalar(0.5);
+        brace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+        brace.castShadow = true;
+        this.group.add(brace);
+      }
+    }
     for (const z of [-TABLE.length / 2 + 0.018, TABLE.length / 2 - 0.018]) {
       const apron = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width, 0.047, 0.013), this.materials.tableEdge);
       apron.position.set(0, TABLE.top - 0.038, z);
       this.group.add(apron);
     }
+  }
+
+  private addBranding(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 96;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#14262d";
+      ctx.fillRect(0, 0, 512, 96);
+      ctx.fillStyle = "#e9f2e9";
+      ctx.font = "bold 55px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("PRO CIRCUIT", 256, 66);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.MeshBasicMaterial({ map: texture });
+    for (const sign of [-1, 1]) {
+      const badge = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.063), material);
+      badge.position.set(0, TABLE.top - 0.051, sign * (TABLE.length / 2 + 0.009));
+      badge.rotation.y = sign < 0 ? Math.PI : 0;
+      this.group.add(badge);
+    }
+    return texture;
   }
 
   private addLegs(): void {
@@ -131,7 +177,8 @@ export class TableVisual {
 
   private addNet(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> {
     const postHeight = TABLE.netHeight + 0.08;
-    for (const x of [-TABLE.width / 2 - 0.018, TABLE.width / 2 + 0.018]) {
+    const netWidth = TABLE.width + 0.08;
+    for (const x of [-netWidth / 2, netWidth / 2]) {
       const post = new THREE.Mesh(
         new THREE.CylinderGeometry(0.014, 0.018, postHeight, 12),
         this.materials.metal
@@ -143,7 +190,7 @@ export class TableVisual {
       clamp.position.set(x, TABLE.top + TABLE.netHeight + 0.012, 0);
       this.net.add(clamp);
     }
-    const netGeometry = new THREE.PlaneGeometry(TABLE.width, TABLE.netHeight, 12, 4);
+    const netGeometry = new THREE.PlaneGeometry(netWidth, TABLE.netHeight, 12, 4);
     const netMesh = new THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>(
       netGeometry,
       new THREE.MeshStandardMaterial({
@@ -159,8 +206,9 @@ export class TableVisual {
     netMesh.name = "woven-net";
     netMesh.position.set(0, TABLE.top + TABLE.netHeight / 2, 0);
     netMesh.castShadow = true;
-    const band = new THREE.Mesh(new THREE.BoxGeometry(TABLE.width + 0.04, 0.012, 0.014), this.materials.tableLine);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, netWidth, 8), this.materials.tableLine);
     band.position.set(0, TABLE.top + TABLE.netHeight + 0.004, 0);
+    band.rotation.z = Math.PI / 2;
     this.net.add(netMesh, band);
     this.group.add(this.net);
     return netMesh;
@@ -178,6 +226,7 @@ export class TableVisual {
 
   dispose(): void {
     this.netTexture.dispose();
+    this.badgeTexture.dispose();
     this.group.traverse((object) => {
       const mesh = object as THREE.Mesh;
       mesh.geometry?.dispose();

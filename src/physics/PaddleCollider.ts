@@ -6,24 +6,36 @@ import { sweptSpherePlane } from "./CollisionPrimitives";
 import type { BallState, PaddleState } from "./State";
 
 export class PaddleCollider {
-  detect(ball: BallState, paddle: PaddleState): CollisionContact | null {
+  detect(ball: BallState, paddle: PaddleState, startTime = 0, endTime = 1): CollisionContact | null {
     if (!paddle.active) return null;
-    const planePoint = paddle.position;
-    const plane = sweptSpherePlane(ball.previousPosition, ball.position, BALL.radius, {
-      point: planePoint,
-      normal: paddle.normal,
+    // Sweep in the racket's moving frame. A stationary ball can be struck by a
+    // moving blade, and a tilted blade needs its own local face coordinates.
+    const startPaddle = paddle.previousPosition.clone().lerp(paddle.position, startTime);
+    const endPaddle = paddle.previousPosition.clone().lerp(paddle.position, endTime);
+    const relativeStart = ball.previousPosition.clone().sub(startPaddle);
+    const relativeEnd = ball.position.clone().sub(endPaddle);
+    const normal = paddle.normal.clone().normalize();
+    if (relativeEnd.clone().sub(relativeStart).dot(normal) >= -1e-8) return null;
+    const plane = sweptSpherePlane(relativeStart, relativeEnd, ball.radius, {
+      point: new Vec3(),
+      normal,
       id: "paddle-" + paddle.side,
       kind: "paddle"
     });
     if (!plane.hit) return null;
-    const local = plane.point.clone().sub(paddle.position);
+    const right = new Vec3(1, 0, 0).projectOnPlane(normal);
+    if (right.lengthSq() < 1e-8) right.set(0, 0, 1).projectOnPlane(normal);
+    right.normalize();
+    const up = new Vec3().crossVectors(right, normal).normalize();
+    const local = plane.point;
     const width = PADDLE.faceWidth * 0.5 + PADDLE.collisionPadding;
     const height = PADDLE.faceHeight * 0.5 + PADDLE.collisionPadding;
-    if (Math.abs(local.x) > width || Math.abs(local.y) > height) return null;
+    if ((local.dot(right) / width) ** 2 + (local.dot(up) / height) ** 2 > 1) return null;
+    const point = local.clone().add(startPaddle.lerp(endPaddle, plane.time));
     return {
       kind: "paddle",
       timeOfImpact: plane.time,
-      point: plane.point.toJSON(),
+      point: point.toJSON(),
       normal: plane.normal.toJSON(),
       penetration: plane.penetration,
       relativeSpeed: ball.velocity.clone().sub(paddle.velocity).length(),

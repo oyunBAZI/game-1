@@ -21,7 +21,7 @@ export function classifyShot(ball: BallState, paddle: PaddleState, side: Side): 
   const verticalAngle = Math.atan2(ball.velocity.y, Math.max(0.001, Math.sqrt(ball.velocity.x ** 2 + ball.velocity.z ** 2)));
   const horizontalAngle = Math.atan2(ball.velocity.x, Math.max(0.001, Math.abs(ball.velocity.z)));
   const paddleSpeed = paddle.swingVelocity.length();
-  const topComponent = ball.angularVelocity.x;
+  const topComponent = ball.angularVelocity.x * (side === "home" ? -1 : 1);
   const incomingNormal = Math.abs(ball.velocity.dot(paddle.normal));
   const contactQuality = clamp(1 - Math.abs(ball.position.x - paddle.position.x) / (paddle.faceWidth * 0.5), 0, 1);
   let kind: ShotKind = "drive";
@@ -58,12 +58,12 @@ export function shotColor(kind: ShotKind): string {
   return "#dce8ee";
 }
 
-export function spinName(spin: Vec3): string {
+export function spinName(spin: Vec3, travelZ = -1): string {
   const top = Math.abs(spin.x);
   const side = Math.abs(spin.y);
   const back = Math.abs(spin.z);
   if (top < 20 && side < 20 && back < 20) return "no spin";
-  if (top > side * 1.5 && top > back * 1.5) return spin.x > 0 ? "topspin" : "backspin";
+  if (top > side * 1.5 && top > back * 1.5) return spin.x * travelZ > 0 ? "topspin" : "backspin";
   if (side > top * 1.5 && side > back * 1.5) return "sidespin";
   return "mixed spin";
 }

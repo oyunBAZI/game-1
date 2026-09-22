@@ -27,14 +27,14 @@ Each ball step:
 3. add gravity, drag, and Magnus forces;
 4. integrate linear velocity and position;
 5. integrate angular velocity;
-6. perform continuous collision tests;
-7. resolve paddle, net and table contacts in explicit order;
+6. sweep the trial motion against the moving racket, net mesh and cord, table top and edges;
+7. resolve the earliest contact and integrate the unused fraction of the step, up to eight contacts;
 8. clamp impossible runaway values;
-9. emit the contact event after state is coherent.
+9. restore the start position for render interpolation and emit contacts in impact order.
 
 ## Contact priority
 
-The current implementation checks paddle, net, then table and edge. Swept tests prevent tunneling for fast motion, but multiple contacts in the same fixed step are not yet sorted by time of impact. A future collision coordinator should resolve the earliest candidate first.
+The earliest time of impact wins, independent of the order in which colliders are queried. A fast net hit and table bounce may both happen in one fixed step. The moving racket is swept in its own frame and checked against an elliptical face in the racket plane. A separation offset and an eight-contact cap protect against numerical loops. The latter is a safety bound, not a substitute for a general rigid-body engine.
 
 ## Spin
 
@@ -44,7 +44,9 @@ Magnus force is approximated from angular velocity cross linear velocity. Contac
 
 ## Table and net
 
-TableCollider owns table geometry. NetCollider owns the net plane and a lightweight deformable node grid. Presentation can consume node positions without deciding whether a ball is legal.
+TableCollider owns table geometry, with separate edge restitution. NetCollider owns the mesh, a rounded top cord and a lightweight deformable node grid. A ball that clips the top cord can continue across the table; a legal receiver bounce after a net touch during service is a let and replays without a point. Presentation consumes node positions without deciding whether a ball is legal.
+
+The AI trajectory predictor advances a separate PhysicsWorld with both rackets disabled. It therefore uses the same drag, Magnus, net and table responses as live play, while selecting an intercept after the bounce on its own half. Predictive trajectories and contact coefficients remain gameplay approximations, not measured equipment calibration.
 
 ## Out and points
 

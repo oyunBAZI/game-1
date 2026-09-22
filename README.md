@@ -2,9 +2,9 @@
 
 ## Current playable build
 
-This repository is an evolving Three.js table tennis game. Run `npm ci` and `npm run dev`, open the local URL, select **Start session**, and press **Enter** to serve. Move with WASD, aim the paddle with the pointer, hold Space or the pointer button to swing, press C for camera modes, and Escape to pause. The opponent serves automatically on its turn.
+This repository is an evolving Three.js table tennis game. Run `npm ci` and `npm run dev`, open the local URL, choose a serve spin, select **Start session**, and press **Enter** to serve. Move with WASD, aim the paddle with the pointer, hold Space or the pointer button to swing, press C for camera modes, and Escape to pause or change the serve selection. The opponent serves automatically on its turn.
 
-The scene includes modeled athletes and rackets, a textured regulation table, a woven deformable net, a lit indoor court, branded barriers, and instanced seats. The simulation uses a 240 Hz fixed step, swept table and net contacts, bounded aerodynamic lift, contact impulse and spin, serve bounce rules, scoring, and an AI return. `npm run typecheck`, `npm run test:simulation`, `npm run validate`, and `npm run build` are the project gates. Coefficients are gameplay approximations; measured real-world calibration and authored assets remain future work.
+The scene includes articulated athletes, laminated rackets, a detailed regulation table, a woven deformable net, arena seating and a live 3D scoreboard. Lighting uses room reflections and soft shadows; the ball has a height-sensitive table shadow. The 240 Hz simulation resolves swept contacts in time order, including moving tilted rackets, table edges and the top net cord. Legal net serves replay as lets, and the AI predicts with the same physics as the live ball. `npm run typecheck`, `npm run test:simulation`, `npm run validate`, and `npm run build` are the project gates. Coefficients are gameplay approximations; measured equipment calibration and authored human models remain future work.
 
 > A high-fidelity, physics-driven 3D table tennis simulation built for the browser with **Three.js**, designed to push WebGL graphics, ball physics, animation, audio, AI, and player control as far as realistically possible.
 

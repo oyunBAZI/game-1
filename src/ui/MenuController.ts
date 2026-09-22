@@ -1,5 +1,6 @@
 import type { EventBus } from "../core/EventBus";
 import type { GameSimulation } from "../game/GameSimulation";
+import type { ServeStyle } from "../game/ServeController";
 import { UI_THEME } from "./UiTheme";
 
 export class MenuController {
@@ -23,11 +24,27 @@ export class MenuController {
     this.title.textContent = "TABLE TENNIS ULTRA";
     this.title.style.cssText = "margin:0;font-size:clamp(28px,5vw,45px);line-height:.95;letter-spacing:-.06em;";
     const subtitle = document.createElement("p");
-    subtitle.textContent = "A high-frequency, spin-aware browser simulation foundation.";
+    subtitle.textContent = "Control the rally with footwork, racket angle and spin in a live 3D arena.";
     subtitle.style.cssText = "margin:0;color:" + UI_THEME.muted + ";line-height:1.5;";
     this.modeLabel = document.createElement("span");
     this.modeLabel.textContent = "PRACTICE MODE";
     this.modeLabel.className = "ttu-chip";
+    const serveLabel = document.createElement("label");
+    serveLabel.textContent = "Serve spin";
+    serveLabel.style.cssText = "display:grid;gap:7px;font-size:12px;color:" + UI_THEME.muted + ";";
+    const serveStyle = document.createElement("select");
+    serveStyle.style.cssText = "padding:10px 12px;border:1px solid rgba(181,255,240,.24);border-radius:9px;background:#173039;color:" + UI_THEME.text + ";cursor:pointer;";
+    for (const [value, label] of [
+      ["flat", "Flat"], ["topspin", "Topspin"], ["backspin", "Backspin"],
+      ["pendulum", "Pendulum sidespin"], ["kick", "Kick serve"], ["lob", "Soft touch"]
+    ] as const) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      serveStyle.append(option);
+    }
+    serveStyle.addEventListener("change", () => this.simulation.match.setServeStyle(serveStyle.value as ServeStyle));
+    serveLabel.append(serveStyle);
     const start = this.button("Start session", () => this.start());
     const reset = this.button("Reset session", () => {
       this.simulation.restart();
@@ -36,7 +53,7 @@ export class MenuController {
     const hint = document.createElement("small");
     hint.textContent = "Press C to cycle cameras during play.";
     hint.style.color = UI_THEME.muted;
-    panel.append(this.title, subtitle, this.modeLabel, start, reset, hint);
+    panel.append(this.title, subtitle, this.modeLabel, serveLabel, start, reset, hint);
     this.root.appendChild(panel);
     container.appendChild(this.root);
   }

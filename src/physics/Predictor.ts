@@ -1,8 +1,9 @@
 import { Vec3 } from "../core/Vec3";
+import { EventBus } from "../core/EventBus";
 import { TABLE } from "./constants";
 import type { PhysicsTuning } from "./constants";
-import { Aerodynamics } from "./Aerodynamics";
 import type { BallState } from "./State";
+import { PhysicsWorld } from "./PhysicsWorld";
 
 export interface PredictionPoint {
   time: number;
@@ -22,45 +23,42 @@ export interface LandingPrediction {
 }
 
 export class BallPredictor {
-  private readonly aero: Aerodynamics;
+  private readonly world: PhysicsWorld;
 
   constructor(private readonly tuning: PhysicsTuning) {
-    this.aero = new Aerodynamics(tuning);
+    this.world = new PhysicsWorld(new EventBus(1), tuning);
+    this.world.state.paddles.home.active = false;
+    this.world.state.paddles.away.active = false;
   }
 
   predict(ball: BallState, duration = 2.5, step = 1 / 120): LandingPrediction {
-    const sim = ball.clone();
+    this.world.reset();
+    this.world.state.ball = ball.clone();
+    const sim = this.world.state.ball;
     const points: PredictionPoint[] = [];
     let crossedNet = false;
     let bounces = 0;
     let landing: PredictionPoint | null = null;
-    for (let time = 0; time <= duration; time += step) {
-      points.push({
-        time,
+    points.push({ time: 0, position: sim.position.clone(), velocity: sim.velocity.clone(), bounced: false, crossedNet });
+    for (let time = 0; time < duration; time += step) {
+      const beforeZ = sim.position.z;
+      const result = this.world.fixedStep(Math.min(step, duration - time));
+      const bounced = result.contacts.some((contact) => contact.kind === "table" || contact.kind === "edge");
+      if (beforeZ * sim.position.z <= 0 && sim.position.y > TABLE.top + TABLE.netHeight) crossedNet = true;
+      const point = {
+        time: Math.min(duration, time + step),
         position: sim.position.clone(),
         velocity: sim.velocity.clone(),
-        bounced: false,
+        bounced,
         crossedNet
-      });
-      if (!crossedNet && Math.abs(sim.position.z) <= 0.02) crossedNet = true;
-      const previousY = sim.position.y;
-      sim.beginStep();
-      this.aero.apply(sim, step);
-      const acceleration = sim.force.clone().divideScalar(sim.mass);
-      sim.velocity.addScaled(acceleration, step);
-      sim.position.addScaled(sim.velocity, step);
-      if (previousY > TABLE.top + sim.radius && sim.position.y <= TABLE.top + sim.radius && Math.abs(sim.position.x) <= TABLE.width / 2 && Math.abs(sim.position.z) <= TABLE.length / 2) {
-        sim.position.y = TABLE.top + sim.radius;
-        sim.velocity.y = Math.abs(sim.velocity.y) * this.tuning.table.restitution;
-        sim.velocity.x *= 1 - this.tuning.table.friction * 0.2;
-        sim.velocity.z *= 1 - this.tuning.table.friction * 0.2;
+      };
+      points.push(point);
+      if (bounced) {
         bounces += 1;
-        const point = points[points.length - 1];
-        point.bounced = true;
-        landing = { ...point, position: sim.position.clone(), velocity: sim.velocity.clone() };
-        if (bounces >= 2) break;
+        landing = point;
+        if (bounces >= 3) break;
       }
-      if (sim.position.y < -0.2 || Math.abs(sim.position.x) > 3 || Math.abs(sim.position.z) > 4) break;
+      if (result.ballOut) break;
     }
     const final = landing ?? points[points.length - 1];
     const valid = Boolean(landing && Math.abs(landing.position.x) <= TABLE.width / 2 && Math.abs(landing.position.z) <= TABLE.length / 2);

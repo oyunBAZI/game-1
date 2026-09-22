@@ -8,9 +8,9 @@ export class ArenaLighting {
 
   constructor(shadows = true) {
     this.group.name = "arena-lighting";
-    this.fill = new THREE.HemisphereLight(0xd6e8ed, 0x162d31, 1.25);
+    this.fill = new THREE.HemisphereLight(0xd6e8ed, 0x162d31, 0.9);
     this.group.add(this.fill);
-    this.key = new THREE.DirectionalLight(0xfff4e7, 2.8);
+    this.key = new THREE.DirectionalLight(0xfff4e7, 2.15);
     this.key.position.set(2.5, 5.8, 3.6);
     this.key.castShadow = shadows;
     this.key.shadow.mapSize.set(2048, 2048);
@@ -32,7 +32,7 @@ export class ArenaLighting {
 
   private addPracticalLights(): void {
     for (const x of [-3.2, 0, 3.2]) {
-      const light = new THREE.SpotLight(0xe5fbf4, 18, 8, Math.PI / 3, 0.75, 2);
+      const light = new THREE.SpotLight(0xe5fbf4, 10, 8, Math.PI / 3, 0.75, 2);
       light.position.set(x, 4.7, 0);
       light.target.position.set(x * 0.15, 0, 0);
       this.group.add(light.target);

@@ -5,6 +5,7 @@ import type { PhysicsWorld } from "../physics/PhysicsWorld";
 import type { CollisionContact } from "../core/types";
 import type { Scoreboard } from "./Scoreboard";
 import { classifyShot } from "./ShotClassifier";
+import { TRAINING_RULES, type RuleSet } from "./Rules";
 
 export interface RallyState {
   active: boolean;
@@ -17,6 +18,7 @@ export interface RallyState {
   serveStage: "own" | "receiver" | "complete";
   expectedBounce: Side | null;
   bouncesOnExpected: number;
+  netOnServe: boolean;
 }
 
 export class RallyController {
@@ -30,14 +32,16 @@ export class RallyController {
     pointReason: null,
     serveStage: "own",
     expectedBounce: null,
-    bouncesOnExpected: 0
+    bouncesOnExpected: 0,
+    netOnServe: false
   };
   private unsubscribe: Array<() => void> = [];
 
   constructor(
     private readonly events: EventBus,
     private readonly world: PhysicsWorld,
-    private readonly scoreboard: Scoreboard
+    private readonly scoreboard: Scoreboard,
+    private readonly rules: RuleSet = TRAINING_RULES
   ) {
     this.unsubscribe.push(
       this.events.on("rally:start", ({ server }) => this.start(server)),
@@ -57,6 +61,12 @@ export class RallyController {
     this.state.serveStage = "own";
     this.state.expectedBounce = server;
     this.state.bouncesOnExpected = 0;
+    this.state.netOnServe = false;
+  }
+
+  cancel(): void {
+    this.state.active = false;
+    this.state.pointReason = null;
   }
 
   onContact(contact: CollisionContact & { tick: number }): void {
@@ -105,12 +115,19 @@ export class RallyController {
       } else if (this.state.serveStage === "receiver") {
         this.state.serveStage = "complete";
         this.state.lastHitter = this.state.server;
+        if (this.state.netOnServe && this.rules.letOnNetServe) {
+          this.state.active = false;
+          this.state.pointReason = "let";
+          this.events.emit("rally:let", { server: this.state.server! });
+          return;
+        }
       } else if (this.state.bouncesOnExpected > 1) {
         this.end(this.state.lastHitter ?? oppositeSide(side), "double-bounce");
       }
       this.state.lastContact = contact.kind;
       return;
     }
+    if (contact.kind === "net" && this.state.serveStage === "receiver") this.state.netOnServe = true;
     this.state.lastContact = contact.kind;
   }
 

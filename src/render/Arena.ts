@@ -5,6 +5,9 @@ import type { MaterialPalette } from "./ProceduralMaterials";
 export class ArenaVisual {
   readonly group = new THREE.Group();
   private readonly signageTexture: THREE.CanvasTexture;
+  private readonly scoreCanvas: HTMLCanvasElement;
+  private readonly scoreTexture: THREE.CanvasTexture;
+  private displayedScore = "";
 
   constructor(materials: MaterialPalette) {
     this.group.name = "arena-visual";
@@ -15,6 +18,19 @@ export class ArenaVisual {
     this.signageTexture = this.createSignage();
     this.addBarriers(materials);
     this.addStands(materials);
+    this.scoreCanvas = document.createElement("canvas");
+    this.scoreCanvas.width = 1024;
+    this.scoreCanvas.height = 256;
+    this.scoreTexture = new THREE.CanvasTexture(this.scoreCanvas);
+    this.scoreTexture.colorSpace = THREE.SRGBColorSpace;
+    const display = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.67, 0.77),
+      new THREE.MeshBasicMaterial({ map: this.scoreTexture, toneMapped: false })
+    );
+    display.name = "arena-score-display";
+    display.position.set(0, 3.5, -5.457);
+    this.group.add(display);
+    this.updateScore(0, 0, 0, 0);
   }
 
   private addFloor(materials: MaterialPalette): void {
@@ -63,11 +79,14 @@ export class ArenaVisual {
   private addCeilingRig(materials: MaterialPalette): void {
     for (const x of [-3.2, 0, 3.2]) {
       const light = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 0.025, 0.34),
-        new THREE.MeshBasicMaterial({ color: 0xd3f7f2, transparent: true, opacity: 0.78 })
+        new THREE.BoxGeometry(2.2, 0.035, 0.34),
+        new THREE.MeshStandardMaterial({ color: 0xe9fff5, emissive: 0xccefe8, emissiveIntensity: 1.4 })
       );
       light.position.set(x, 4.8, 0);
       this.group.add(light);
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(2.28, 0.09, 0.41), materials.metal);
+      housing.position.set(x, 4.87, 0);
+      this.group.add(housing);
       const cable = new THREE.Mesh(
         new THREE.CylinderGeometry(0.006, 0.006, 0.8, 6),
         materials.metal
@@ -110,7 +129,9 @@ export class ArenaVisual {
 
   private addBarriers(materials: MaterialPalette): void {
     const signMaterial = new THREE.MeshBasicMaterial({ map: this.signageTexture, side: THREE.DoubleSide });
-    for (const z of [-3.1, 3.1]) {
+    // Leave the home baseline open to the competitive camera. A barrier here
+    // filled the foreground and obscured the racket and lower table.
+    for (const z of [-3.1]) {
       for (const x of [-2.4, 0, 2.4]) {
         const barrier = new THREE.Mesh(new THREE.BoxGeometry(2.38, 0.68, 0.07), materials.tableEdge);
         barrier.position.set(x, 0.36, z);
@@ -134,25 +155,57 @@ export class ArenaVisual {
   }
 
   private addStands(materials: MaterialPalette): void {
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.28, 1.7), materials.tableEdge);
-    tier.position.set(0, 0.16, -4.65);
-    tier.receiveShadow = true;
-    this.group.add(tier);
-    const seat = new THREE.BoxGeometry(0.32, 0.36, 0.27);
-    const seatMaterial = new THREE.MeshStandardMaterial({ color: 0x32606b, roughness: 0.76 });
-    const seats = new THREE.InstancedMesh(seat, seatMaterial, 64);
+    const columns = 32;
+    const rows = 4;
+    const seat = new THREE.BoxGeometry(0.27, 0.18, 0.24);
+    const seatMaterial = new THREE.MeshStandardMaterial({ color: 0x51747a, roughness: 0.82 });
+    const seats = new THREE.InstancedMesh(seat, seatMaterial, columns * rows);
+    const torsos = new THREE.InstancedMesh(
+      new THREE.CapsuleGeometry(0.085, 0.12, 3, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+      columns * rows
+    );
+    const heads = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.063, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xbda58d, roughness: 0.95 }),
+      columns * rows
+    );
     const dummy = new THREE.Object3D();
     let index = 0;
-    for (let row = 0; row < 2; row += 1) {
-      for (let col = 0; col < 32; col += 1) {
-        dummy.position.set((col - 15.5) * 0.33, 0.43 + row * 0.28, -4.1 - row * 0.66);
+    const shirtColors = [0x233a43, 0x537077, 0x87938f, 0x30606a, 0x3f4a51, 0x725c50];
+    for (let row = 0; row < rows; row += 1) {
+      const z = -3.85 - row * 0.49;
+      const height = 0.13 + row * 0.24;
+      const tier = new THREE.Mesh(new THREE.BoxGeometry(11, 0.22, 0.52), materials.tableEdge);
+      tier.position.set(0, height, z);
+      tier.receiveShadow = true;
+      this.group.add(tier);
+      for (let col = 0; col < columns; col += 1) {
+        const x = (col - (columns - 1) / 2) * 0.34;
+        dummy.position.set(x, height + 0.18, z);
         dummy.rotation.set(0, 0, 0);
+        dummy.scale.setScalar(1);
         dummy.updateMatrix();
         seats.setMatrixAt(index++, dummy.matrix);
+        seats.setColorAt(index - 1, new THREE.Color((row + col) % 5 === 0 ? 0x315861 : 0x53737a));
+        // Empty seats break up the silhouette of the crowd. Reuse the same
+        // instanced geometry, collapsing unoccupied instances out of view.
+        const occupied = (col * 17 + row * 11) % 7 !== 0;
+        dummy.scale.setScalar(occupied ? 1 : 0.001);
+        dummy.position.set(x, height + 0.46, z - 0.02);
+        dummy.updateMatrix();
+        torsos.setMatrixAt(index - 1, dummy.matrix);
+        torsos.setColorAt(index - 1, new THREE.Color(shirtColors[(col * 3 + row * 5) % shirtColors.length]));
+        dummy.position.y += 0.19;
+        dummy.updateMatrix();
+        heads.setMatrixAt(index - 1, dummy.matrix);
       }
     }
     seats.receiveShadow = true;
-    this.group.add(seats);
+    this.group.add(seats, torsos, heads);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(11, 0.035, 0.04), materials.metal);
+    rail.position.set(0, 1.01, -5.47);
+    this.group.add(rail);
     const glow = new THREE.Mesh(
       new THREE.BoxGeometry(8.2, 0.04, 0.03),
       new THREE.MeshBasicMaterial({ color: 0x49b8b8 })
@@ -161,7 +214,34 @@ export class ArenaVisual {
     this.group.add(glow);
   }
 
+  updateScore(home: number, away: number, homeGames: number, awayGames: number): void {
+    const score = `${home}:${away}:${homeGames}:${awayGames}`;
+    if (score === this.displayedScore) return;
+    this.displayedScore = score;
+    const ctx = this.scoreCanvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#08171d";
+    ctx.fillRect(0, 0, 1024, 256);
+    ctx.fillStyle = "#36b2b0";
+    ctx.fillRect(0, 0, 1024, 8);
+    ctx.fillStyle = "#91adae";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("HOME", 170, 57);
+    ctx.fillText("SETS", 512, 57);
+    ctx.fillText("AWAY", 854, 57);
+    ctx.fillStyle = "#f3f1df";
+    ctx.font = "bold 138px monospace";
+    ctx.fillText(String(home).padStart(2, "0"), 175, 202);
+    ctx.fillText(String(away).padStart(2, "0"), 849, 202);
+    ctx.font = "bold 75px monospace";
+    ctx.fillStyle = "#4fd1c5";
+    ctx.fillText(`${homeGames}  :  ${awayGames}`, 512, 181);
+    this.scoreTexture.needsUpdate = true;
+  }
+
   dispose(): void {
     this.signageTexture.dispose();
+    this.scoreTexture.dispose();
   }
 }

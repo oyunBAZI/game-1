@@ -92,6 +92,9 @@ export class GameSimulation implements FixedStepParticipant {
       const aiAction = this.ai.update(dt, this.world.state.ball, this.world.state.players.away, this.world.state.paddles.away);
       this.world.state.players.away.velocity.copy(aiAction.move).multiplyScalar(this.config.difficulty.movementSpeed);
       const paddle = this.world.state.paddles.away;
+      const rally = this.match.rally.state;
+      paddle.active = rally.active && rally.serveStage === "complete" &&
+        rally.expectedBounce === "away" && rally.bouncesOnExpected > 0;
       this.world.paddles.placeForInput(paddle, aiAction.paddleTarget, aiAction.paddleNormal, dt, 4 + this.config.difficulty.movementSpeed);
       paddle.swingVelocity.copy(aiAction.paddleNormal).multiplyScalar(aiAction.swing * 3.5);
       this.world.setDesiredSpin("away", aiAction.spin);

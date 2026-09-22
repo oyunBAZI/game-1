@@ -138,7 +138,7 @@ export function createDefaultConfig(): GameConfig {
       antialias: true,
       shadows: true,
       shadowMapSize: 2048,
-      toneMappingExposure: 1.08,
+      toneMappingExposure: 0.94,
       pixelRatioCap: 2,
       showTrails: false,
       reducedMotion: false

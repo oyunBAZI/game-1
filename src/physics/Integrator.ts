@@ -22,6 +22,10 @@ export class BallIntegrator {
     this.angularAcceleration.copy(ball.torque).divideScalar(0.00000072);
     ball.angularVelocity.addScaled(this.angularAcceleration, dt);
     ball.angularVelocity.clampMagnitude(this.tuning.maxSpinRate);
+    // Forces belong to this segment only. Continuous collision can integrate
+    // several segments in one fixed step after a rebound.
+    ball.force.set(0, 0, 0);
+    ball.torque.set(0, 0, 0);
     ball.position.y = Math.max(-1, Math.min(5, ball.position.y));
     ball.velocity.finite();
     ball.angularVelocity.finite();

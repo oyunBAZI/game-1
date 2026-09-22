@@ -31,8 +31,8 @@ export function createMaterialPalette(): MaterialPalette {
   floorGrain.repeat.set(55, 70);
   floorGrain.needsUpdate = true;
   const table = new THREE.MeshPhysicalMaterial({
-    color: 0x075b7f, roughness: 0.48, metalness: 0.02,
-    clearcoat: 0.18, clearcoatRoughness: 0.68, bumpMap: grain, bumpScale: 0.0015
+    color: 0x075273, roughness: 0.5, metalness: 0.02,
+    clearcoat: 0.14, clearcoatRoughness: 0.68, bumpMap: grain, bumpScale: 0.0015
   });
   const floor = new THREE.MeshStandardMaterial({
     color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003

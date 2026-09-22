@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Quat } from "../core/Quat";
 import { Vec3 } from "../core/Vec3";
 import { BALL } from "../physics/constants";
+import { TABLE } from "../physics/constants";
 import type { BallState } from "../physics/State";
 import type { MaterialPalette } from "./ProceduralMaterials";
 
@@ -12,6 +13,7 @@ export class BallVisual {
   private readonly trailPositions: THREE.Vector3[] = [];
   private readonly ballQuaternion = new Quat();
   private readonly print: THREE.CanvasTexture;
+  private readonly tableShadow: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
 
   constructor(materials: MaterialPalette) {
     const geometry = new THREE.SphereGeometry(BALL.radius, 32, 24);
@@ -35,6 +37,13 @@ export class BallVisual {
     this.mesh.receiveShadow = true;
     this.group.name = "ball-visual";
     this.group.add(this.mesh);
+    this.tableShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.075, 32),
+      new THREE.MeshBasicMaterial({ color: 0x071723, transparent: true, opacity: 0.2, depthWrite: false })
+    );
+    this.tableShadow.rotation.x = -Math.PI / 2;
+    this.tableShadow.renderOrder = 2;
+    this.group.add(this.tableShadow);
     const trailGeometry = new THREE.BufferGeometry();
     trailGeometry.setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
     this.trail = new THREE.Line(
@@ -48,6 +57,13 @@ export class BallVisual {
   sync(state: BallState, alpha: number, dt: number, showTrail = false): void {
     const interpolated = Vec3.from(state.previousPosition).lerp(state.position, alpha);
     this.group.position.set(interpolated.x, interpolated.y, interpolated.z);
+    const altitude = Math.max(0, interpolated.y - TABLE.top);
+    this.tableShadow.visible = Math.abs(interpolated.x) < TABLE.width / 2 - 0.02 &&
+      Math.abs(interpolated.z) < TABLE.length / 2 - 0.02 && altitude < 1.4;
+    this.tableShadow.position.set(0, TABLE.top + 0.003 - interpolated.y, 0);
+    const shadowSize = 0.65 + altitude * 4;
+    this.tableShadow.scale.set(shadowSize, shadowSize, 1);
+    this.tableShadow.material.opacity = 0.32 * Math.exp(-altitude * 2.2);
     const spinAxis = state.angularVelocity.clone();
     const angle = spinAxis.length() * Math.min(dt, 1 / 30);
     if (angle > 0.0001) {
@@ -81,5 +97,7 @@ export class BallVisual {
     this.print.dispose();
     this.trail.geometry.dispose();
     (this.trail.material as THREE.Material).dispose();
+    this.tableShadow.geometry.dispose();
+    this.tableShadow.material.dispose();
   }
 }

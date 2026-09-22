@@ -35,7 +35,7 @@ export class MatchController {
   ) {
     this.rules = rules;
     this.scoreboard = new Scoreboard(events, rules);
-    this.rally = new RallyController(events, world, this.scoreboard);
+    this.rally = new RallyController(events, world, this.scoreboard, rules);
     this.serve = new ServeController(events, world, rules);
     const context: MatchContext = { mode, phase: "boot", selectedServe: "flat" };
     this.machine = new StateMachine(context);
@@ -46,9 +46,18 @@ export class MatchController {
     ]);
     this.machine.start("boot");
     this.events.on("rally:end", ({ winner }) => this.onRallyEnd(winner));
+    this.events.on("rally:let", () => {
+      if (this.phase() !== "rally") return;
+      this.serve.replayLet();
+      this.world.state.ball.reset();
+      this.machine.transitionTo("serve");
+      this.events.emit("ui:toast", { message: "LET — replay the serve", level: "info" });
+    });
   }
 
   start(server: Side = "home"): void {
+    this.rally.cancel();
+    this.serve.replayLet();
     this.scoreboard.resetMatch();
     this.initialServer = server;
     this.nextServer = server;

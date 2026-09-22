@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { GraphicsConfig } from "../config/GameConfig";
 
 export class GameRenderer {
@@ -6,6 +7,7 @@ export class GameRenderer {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly root: THREE.Group;
+  private readonly environmentTarget: THREE.WebGLRenderTarget;
   private resizeObserver: ResizeObserver | null = null;
   private container: HTMLElement | null = null;
 
@@ -24,6 +26,12 @@ export class GameRenderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x091118, 6, 22);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const room = new RoomEnvironment();
+    this.environmentTarget = pmrem.fromScene(room);
+    this.scene.environment = this.environmentTarget.texture;
+    room.dispose();
+    pmrem.dispose();
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
     this.camera.position.set(3.3, 2.25, 4.6);
     this.root = new THREE.Group();
@@ -82,6 +90,7 @@ export class GameRenderer {
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
     textures.forEach((texture) => texture.dispose());
+    this.environmentTarget.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

@@ -60,6 +60,8 @@ export class RenderBridge {
     this.players.home.sync(state.players.home, state.paddles.home, alpha, state.time);
     this.players.away.sync(state.players.away, state.paddles.away, alpha, state.time);
     this.table.updateNet(this.simulation.world.net.positions());
+    const score = this.simulation.match.scoreboard;
+    this.arena.updateScore(score.points.home, score.points.away, score.games.home, score.games.away);
     this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
     this.camera.update(dt, state.ball, this.simulation.config.graphics.reducedMotion);
     this.renderer.render();

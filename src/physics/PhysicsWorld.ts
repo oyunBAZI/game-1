@@ -9,6 +9,11 @@ import { BallIntegrator } from "./Integrator";
 import { TableCollider } from "./TableCollider";
 import { WorldState } from "./State";
 
+type WorldHit =
+  | { kind: "paddle"; contact: CollisionContact }
+  | { kind: "net"; contact: CollisionContact }
+  | { kind: "table"; contact: CollisionContact; surface: "top" | "edge" | "side"; normal: Vec3 };
+
 export interface PhysicsStepResult {
   contacts: CollisionContact[];
   ballOut: boolean;
@@ -23,7 +28,6 @@ export class PhysicsWorld {
   readonly integrator: BallIntegrator;
   readonly tuning: PhysicsTuning;
   private readonly contacts: CollisionContact[] = [];
-  private readonly contactSides = new Set<Side>();
   private readonly desiredSpin: Record<Side, Vec3> = { home: new Vec3(), away: new Vec3() };
   private lastContactTick = new Map<string, number>();
 
@@ -56,7 +60,6 @@ export class PhysicsWorld {
     this.state.players.away.position.set(0, 0, -1.62);
     this.net.reset();
     this.contacts.length = 0;
-    this.contactSides.clear();
     this.lastContactTick.clear();
   }
 
@@ -85,13 +88,9 @@ export class PhysicsWorld {
     }
     this.net.step(dt);
     this.contacts.length = 0;
-    this.contactSides.clear();
     let outReason: string | null = null;
     if (simulateBall) {
-      this.integrator.integrate(world.ball, dt);
-      this.detectAndResolvePaddles();
-      this.detectAndResolveNet();
-      this.detectAndResolveTable();
+      this.advanceBall(dt);
       outReason = this.detectOut();
     }
     world.finishStep(dt);
@@ -99,57 +98,88 @@ export class PhysicsWorld {
     return { contacts: [...this.contacts], ballOut: Boolean(outReason), outReason };
   }
 
-  private detectAndResolvePaddles(): void {
+  /** Resolve the earliest surface first, then simulate the unused part of the step.
+   * This permits a fast ball to hit the net and table in one step without
+   * reporting the contacts in the opposite order or tunnelling through either.
+   */
+  private advanceBall(dt: number): void {
     const ball = this.state.ball;
+    const frameStart = ball.previousPosition.clone();
+    let remaining = dt;
+    let elapsed = 0;
+    for (let iteration = 0; iteration < 8 && remaining > 1e-7; iteration += 1) {
+      const start = ball.position.clone();
+      const startVelocity = ball.velocity.clone();
+      const startSpin = ball.angularVelocity.clone();
+      ball.previousPosition.copy(start);
+      this.integrator.integrate(ball, remaining);
+      const hit = this.firstHit(elapsed / dt, (elapsed + remaining) / dt);
+      if (!hit) { remaining = 0; break; }
+      const fraction = Math.max(0, Math.min(1, hit.contact.timeOfImpact));
+      ball.position.copy(start).lerp(ball.position, fraction);
+      ball.velocity.copy(startVelocity).lerp(ball.velocity, fraction);
+      ball.angularVelocity.copy(startSpin).lerp(ball.angularVelocity, fraction);
+      const globalTime = (elapsed + remaining * fraction) / dt;
+      this.resolveHit(hit);
+      hit.contact.timeOfImpact = globalTime;
+      this.contacts.push(hit.contact);
+      this.lastContactTick.set(hit.contact.surfaceId, this.state.tick);
+      elapsed += remaining * fraction;
+      remaining *= 1 - fraction;
+    }
+    // The iteration cap only protects against degenerate geometry. Keep the
+    // frame finite and preserve the original start for render interpolation.
+    if (remaining > 1e-7) {
+      ball.previousPosition.copy(ball.position);
+      this.integrator.integrate(ball, remaining);
+    }
+    ball.previousPosition.copy(frameStart);
+  }
+
+  private firstHit(startTime: number, endTime: number): WorldHit | null {
+    const ball = this.state.ball;
+    let earliest: WorldHit | null = null;
+    const consider = (hit: WorldHit | null): void => {
+      if (!hit || this.lastContactTick.get(hit.contact.surfaceId) === this.state.tick) return;
+      if (!earliest || hit.contact.timeOfImpact < earliest.contact.timeOfImpact) earliest = hit;
+    };
     for (const side of ["home", "away"] as Side[]) {
       const paddle = this.state.paddles[side];
-      const contact = this.paddles.detect(ball, paddle);
-      if (!contact) continue;
-      const previousTick = this.lastContactTick.get(contact.surfaceId);
-      if (previousTick === this.state.tick) continue;
+      const contact = this.paddles.detect(ball, paddle, startTime, endTime);
+      if (contact) consider({ kind: "paddle", contact });
+    }
+    const net = this.net.detect(ball);
+    if (net) consider({ kind: "net", contact: net });
+    const table = this.table.detect(ball);
+    if (table) consider({ kind: "table", ...table });
+    return earliest;
+  }
+
+  private resolveHit(hit: WorldHit): void {
+    const ball = this.state.ball;
+    const contact = hit.contact;
+    const normal = Vec3.from(contact.normal);
+    if (hit.kind === "paddle") {
+      const side = contact.side!;
+      const paddle = this.state.paddles[side];
       resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side]);
-      const normal = Vec3.from(contact.normal);
-      ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
       ball.lastContact = "paddle";
       ball.lastContactSide = side;
       ball.lastHitTick = this.state.tick;
-      ball.contactCount += 1;
-      this.contacts.push(contact);
-      this.contactSides.add(side);
-      this.lastContactTick.set(contact.surfaceId, this.state.tick);
+    } else if (hit.kind === "net") {
+      const before = ball.velocity.clone();
+      resolveNetContact(ball, normal, this.tuning.netRestitution);
+      this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
+      ball.lastContact = "net";
+    } else {
+      resolveTableBounce(ball, hit.normal, hit.surface === "edge"
+        ? { ...this.tuning.table, restitution: this.tuning.table.edgeRestitution }
+        : this.tuning.table);
+      ball.grounded = true;
+      ball.lastContact = hit.surface === "top" ? "table" : "edge";
     }
-  }
-
-  private detectAndResolveNet(): void {
-    const ball = this.state.ball;
-    const contact = this.net.detect(ball);
-    if (!contact) return;
-    const previousTick = this.lastContactTick.get(contact.surfaceId);
-    if (previousTick === this.state.tick) return;
-    const before = ball.velocity.clone();
-    const normal = Vec3.from(contact.normal);
-    resolveNetContact(ball, normal, this.tuning.netRestitution);
-    this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
     ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);
-    ball.lastContact = "net";
     ball.contactCount += 1;
-    this.contacts.push(contact);
-    this.lastContactTick.set(contact.surfaceId, this.state.tick);
-  }
-
-  private detectAndResolveTable(): void {
-    const ball = this.state.ball;
-    const collision = this.table.detect(ball);
-    if (!collision) return;
-    const previousTick = this.lastContactTick.get(collision.contact.surfaceId);
-    if (previousTick === this.state.tick) return;
-    resolveTableBounce(ball, collision.normal, this.tuning.table);
-    ball.position.copy(collision.contact.point).addScaled(collision.normal, ball.radius + 0.0005);
-    ball.grounded = true;
-    ball.lastContact = collision.surface === "top" ? "table" : "edge";
-    ball.contactCount += 1;
-    this.contacts.push(collision.contact);
-    this.lastContactTick.set(collision.contact.surfaceId, this.state.tick);
   }
 
   private detectOut(): string | null {

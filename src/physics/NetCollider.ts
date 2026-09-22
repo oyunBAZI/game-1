@@ -31,14 +31,16 @@ export class NetCollider {
 
   detect(ball: BallState): CollisionContact | null {
     if (Math.abs(ball.velocity.z) < 1e-8) return null;
+    const cord = this.detectCord(ball);
     const sign = ball.velocity.z > 0 ? -1 : 1;
     const contactZ = sign * (TABLE.netThickness * 0.5 + ball.radius);
     const travel = ball.position.z - ball.previousPosition.z;
     const fraction = (contactZ - ball.previousPosition.z) / travel;
-    if (fraction < 0 || fraction > 1) return null;
+    if (fraction < 0 || fraction > 1) return cord;
     const center = ball.previousPosition.clone().lerp(ball.position, fraction);
     if (Math.abs(center.x) > this.width / 2 + ball.radius ||
-        center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius) return null;
+        center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius - 0.006) return cord;
+    if (cord && cord.timeOfImpact < fraction) return cord;
     const normal = new Vec3(0, 0, sign);
     return {
       kind: "net",
@@ -48,6 +50,37 @@ export class NetCollider {
       penetration: 0,
       relativeSpeed: ball.velocity.length(),
       surfaceId: "net-mesh"
+    };
+  }
+
+  /** The top tape acts like a narrow cylinder. A grazing ball can skim over
+   * it instead of receiving the full face-on reflection of the woven net. */
+  private detectCord(ball: BallState): CollisionContact | null {
+    const start = ball.previousPosition;
+    const end = ball.position;
+    const dy = end.y - start.y;
+    const dz = end.z - start.z;
+    const y = start.y - this.topY;
+    const radius = ball.radius + 0.006;
+    const a = dy * dy + dz * dz;
+    const b = 2 * (y * dy + start.z * dz);
+    const c = y * y + start.z * start.z - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+    if (a < 1e-12 || c <= 0 || discriminant < 0) return null;
+    const fraction = (-b - Math.sqrt(discriminant)) / (2 * a);
+    if (fraction < 0 || fraction > 1) return null;
+    const center = start.clone().lerp(end, fraction);
+    if (Math.abs(center.x) > this.width / 2 + ball.radius || center.y < this.topY - 0.006) return null;
+    const normal = new Vec3(0, center.y - this.topY, center.z).normalize();
+    if (ball.velocity.dot(normal) >= 0) return null;
+    return {
+      kind: "net",
+      timeOfImpact: fraction,
+      point: center.subScaled(normal, ball.radius).toJSON(),
+      normal: normal.toJSON(),
+      penetration: 0,
+      relativeSpeed: ball.velocity.length(),
+      surfaceId: "net-cord"
     };
   }
 
