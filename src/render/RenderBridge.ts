@@ -27,7 +27,7 @@ export class RenderBridge {
     this.camera = new CameraRig(this.renderer.camera);
     this.table = new TableVisual(this.materials);
     this.arena = new ArenaVisual(this.materials);
-    this.lighting = new ArenaLighting(simulation.config.graphics.shadows);
+    this.lighting = new ArenaLighting(simulation.config.graphics.shadows, simulation.config.graphics.shadowMapSize);
     this.ball = new BallVisual(this.materials);
     this.environment = new EnvironmentDetail(this.materials, {
       banners: false, benches: false, plants: false, wallPanels: false

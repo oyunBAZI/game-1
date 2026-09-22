@@ -1,6 +1,6 @@
 import { Random } from "../core/Random";
 import { Vec3 } from "../core/Vec3";
-import { clamp, damp } from "../core/MathUtils";
+import { clamp } from "../core/MathUtils";
 import type { DifficultyProfile, Side } from "../core/types";
 import { BallPredictor, type LandingPrediction } from "../physics/Predictor";
 import type { PhysicsTuning } from "../physics/constants";
@@ -43,19 +43,19 @@ export class AIBrain {
     };
   }
 
-  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState): AIAction {
+  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState, hasBounced = false): AIAction {
     this.reactionTimer -= dt;
     if (this.reactionTimer > 0) return this.lastAction;
     this.reactionTimer = this.profile.reactionSeconds * this.random.range(0.82, 1.18);
     const movingTowardAI = this.side === "home" ? ball.velocity.z > 0 : ball.velocity.z < 0;
-    if (!movingTowardAI && ball.position.y < 0.9) {
+    if (!movingTowardAI) {
       this.lastAction = this.recover(player, paddle, dt);
       return this.lastAction;
     }
     this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
     const sign = this.side === "away" ? -1 : 1;
-    let bouncedOnOurHalf = false;
+    let bouncedOnOurHalf = hasBounced;
     const playable: LandingPrediction["points"] = [];
     for (const point of this.prediction.points) {
       if (point.bounced && point.position.z * sign > 0) {
@@ -98,6 +98,13 @@ export class AIBrain {
       confidence
     };
     return this.lastAction;
+  }
+
+  reset(): void {
+    this.reactionTimer = 0;
+    this.prediction = null;
+    this.lastAction.swing = 0;
+    this.lastAction.move.set(0, 0, 0);
   }
 
   private recover(player: PlayerState, paddle: PaddleState, dt: number): AIAction {

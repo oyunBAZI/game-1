@@ -14,14 +14,25 @@ export class BallIntegrator {
   }
 
   integrate(ball: BallState, dt: number): void {
-    this.aerodynamics.apply(ball, dt);
-    this.acceleration.copy(ball.force).divideScalar(ball.mass);
-    ball.velocity.addScaled(this.acceleration, dt);
-    ball.velocity.clampMagnitude(this.tuning.maxBallSpeed);
-    ball.position.addScaled(ball.velocity, dt);
-    this.angularAcceleration.copy(ball.torque).divideScalar(0.00000072);
-    ball.angularVelocity.addScaled(this.angularAcceleration, dt);
-    ball.angularVelocity.clampMagnitude(this.tuning.maxSpinRate);
+    if (!Number.isFinite(dt) || dt < 0) throw new RangeError("Invalid integration step");
+    if (dt === 0) return;
+    // Explicit midpoint: sample velocity-dependent drag and lift halfway through
+    // flight, avoiding the first-order position drift of semi-implicit Euler.
+    const startVelocity = ball.velocity.clone();
+    const startSpin = ball.angularVelocity.clone();
+    const externalForce = ball.force.clone();
+    const inertia = (2 / 3) * ball.mass * ball.radius * ball.radius;
+    this.acceleration.copy(this.aerodynamics.forces(ball).total).add(externalForce).divideScalar(ball.mass);
+    this.angularAcceleration.copy(ball.torque).divideScalar(inertia);
+    ball.velocity.addScaled(this.acceleration, dt * 0.5);
+    ball.angularVelocity.multiplyScalar(Math.exp(-this.tuning.angularDrag * dt * 0.5))
+      .addScaled(this.angularAcceleration, dt * 0.5);
+    const midpointVelocity = ball.velocity.clone();
+    this.acceleration.copy(this.aerodynamics.forces(ball).total).add(externalForce).divideScalar(ball.mass);
+    ball.position.addScaled(midpointVelocity, dt);
+    ball.velocity.copy(startVelocity).addScaled(this.acceleration, dt).clampMagnitude(this.tuning.maxBallSpeed);
+    ball.angularVelocity.copy(startSpin).multiplyScalar(Math.exp(-this.tuning.angularDrag * dt))
+      .addScaled(this.angularAcceleration, dt).clampMagnitude(this.tuning.maxSpinRate);
     // Forces belong to this segment only. Continuous collision can integrate
     // several segments in one fixed step after a rebound.
     ball.force.set(0, 0, 0);
@@ -44,6 +55,6 @@ export class BallIntegrator {
   }
 
   estimateEnergy(ball: BallState): number {
-    return 0.5 * ball.mass * ball.velocity.lengthSq() + 0.5 * 0.00000036 * ball.angularVelocity.lengthSq();
+    return 0.5 * ball.mass * ball.velocity.lengthSq() + 0.5 * ((2 / 3) * ball.mass * ball.radius ** 2) * ball.angularVelocity.lengthSq();
   }
 }

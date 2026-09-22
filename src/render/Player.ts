@@ -1,10 +1,14 @@
 import * as THREE from "three";
+import { solveTwoBone } from "./TwoBoneIK";
+import { createSurfaceTexture } from "./ProceduralMaterials";
+import { PADDLE } from "../physics/constants";
 import type { Side } from "../core/types";
 import type { PaddleState, PlayerState } from "../physics/State";
 
 /** Lightweight articulated athlete whose striking hand follows the actual racket. */
 export class PlayerVisual {
   readonly group = new THREE.Group();
+  private readonly torsoGroup = new THREE.Group();
   private readonly upperArm: THREE.Mesh;
   private readonly forearm: THREE.Mesh;
   private readonly leftArm: THREE.Mesh;
@@ -23,8 +27,11 @@ export class PlayerVisual {
 
   constructor(side: Side) {
     this.group.name = side + "-athlete";
+    this.group.add(this.torsoGroup);
     this.forward = side === "home" ? -1 : 1;
-    const jersey = new THREE.MeshStandardMaterial({ color: side === "home" ? 0x136e7e : 0xb03b37, roughness: 0.76 });
+    const fabric = createSurfaceTexture("fabric");
+    fabric.repeat.set(4, 4);
+    const jersey = new THREE.MeshPhysicalMaterial({ bumpMap: fabric, bumpScale: 0.0008, sheen: 0.35, sheenRoughness: 0.85, color: side === "home" ? 0x136e7e : 0xb03b37, roughness: 0.76 });
     const stripe = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xe1c78b : 0xf1e3cb, roughness: 0.72 });
     const shorts = new THREE.MeshStandardMaterial({ color: 0x18242c, roughness: 0.9 });
     const skin = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xc18b65 : 0x9d654b, roughness: 0.85 });
@@ -38,11 +45,17 @@ export class PlayerVisual {
       mesh.position.set(x, y, z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      this.group.add(mesh);
+      if (y > 0.8) this.torsoGroup.add(mesh);
+      else this.group.add(mesh);
       return mesh;
     };
 
-    const torso = add(new THREE.CylinderGeometry(0.19, 0.135, 0.47, 12), jersey, 0, 1.08, 0);
+    const profile = [
+      [0.135, -0.235], [0.145, -0.21], [0.137, -0.12], [0.148, 0.02],
+      [0.182, 0.14], [0.19, 0.19], [0.16, 0.225], [0.077, 0.245]
+    ].map(([radius, height]) => new THREE.Vector2(radius, height));
+    const torso = add(new THREE.LatheGeometry(profile, 32), jersey, 0, 1.08, 0);
+    torso.name = "tailored-jersey";
     torso.scale.z = 0.72;
     const chest = add(new THREE.SphereGeometry(0.177, 18, 12), jersey, 0, 1.215, 0);
     chest.scale.set(1, 0.35, 0.72);
@@ -102,20 +115,28 @@ export class PlayerVisual {
   sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number): void {
     const position = player.previousPosition.clone().lerp(player.position, alpha);
     this.group.position.set(position.x, position.y, position.z);
+    const faceNormal = new THREE.Vector3(paddle.normal.x, paddle.normal.y, paddle.normal.z).normalize();
+    const racketRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, this.forward), faceNormal);
+    const gripOffset = new THREE.Vector3(0, -PADDLE.faceHeight / 2 - PADDLE.handleLength * 0.45, 0)
+      .applyQuaternion(racketRotation);
     const hand = new THREE.Vector3(
       paddle.previousPosition.x + (paddle.position.x - paddle.previousPosition.x) * alpha - position.x,
-      paddle.previousPosition.y + (paddle.position.y - paddle.previousPosition.y) * alpha - position.y - 0.105,
+      paddle.previousPosition.y + (paddle.position.y - paddle.previousPosition.y) * alpha - position.y,
       paddle.previousPosition.z + (paddle.position.z - paddle.previousPosition.z) * alpha - position.z
-    );
-    const shoulder = new THREE.Vector3(0.205, 1.27, 0);
-    const elbow = shoulder.clone().lerp(hand, 0.48).add(new THREE.Vector3(0.11, -0.08, -this.forward * 0.06));
-    this.placeSegment(this.upperArm, shoulder, elbow);
-    this.placeSegment(this.forearm, elbow, hand);
-    this.elbows[0].position.copy(elbow);
-    this.hand.position.copy(hand);
-    const otherShoulder = new THREE.Vector3(-0.205, 1.27, 0);
-    const otherElbow = new THREE.Vector3(-0.32, 1.03, -this.forward * 0.02);
-    const otherHand = new THREE.Vector3(-0.26, 0.90, this.forward * 0.13);
+    ).add(gripOffset);
+    // Shift the shoulder toward a wide stroke before solving the fixed-length arm.
+    const shoulder = new THREE.Vector3(0.18 + THREE.MathUtils.clamp(hand.x * 0.16, -0.08, 0.08), 1.27, 0);
+    const reach = hand.clone().sub(shoulder);
+    this.torsoGroup.position.copy(reach).normalize().multiplyScalar(Math.min(0.24, Math.max(0, reach.length() - 0.57)));
+    shoulder.add(this.torsoGroup.position);
+    const arm = solveTwoBone(shoulder, hand, new THREE.Vector3(0.5, 0.95, -this.forward * 0.2), 0.30, 0.29);
+    this.placeSegment(this.upperArm, shoulder, arm.joint);
+    this.placeSegment(this.forearm, arm.joint, arm.end);
+    this.elbows[0].position.copy(arm.joint);
+    this.hand.position.copy(arm.end);
+    const otherShoulder = new THREE.Vector3(-0.205, 1.27, 0).add(this.torsoGroup.position);
+    const otherElbow = new THREE.Vector3(-0.32, 1.03, -this.forward * 0.02).add(this.torsoGroup.position);
+    const otherHand = new THREE.Vector3(-0.26, 0.90, this.forward * 0.13).add(this.torsoGroup.position);
     this.placeSegment(this.leftArm, otherShoulder, otherElbow);
     this.placeSegment(this.leftForearm, otherElbow, otherHand);
     this.elbows[1].position.copy(otherElbow);
@@ -150,6 +171,9 @@ export class PlayerVisual {
       const mesh = object as THREE.Mesh;
       mesh.geometry?.dispose();
     });
-    for (const material of this.materials) material.dispose();
+    for (const material of this.materials) {
+      (material as THREE.MeshStandardMaterial).bumpMap?.dispose();
+      material.dispose();
+    }
   }
 }
