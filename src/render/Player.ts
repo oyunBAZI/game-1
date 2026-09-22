@@ -1,10 +1,12 @@
 import * as THREE from "three";
+import { solveTwoBone } from "./TwoBoneIK";
 import type { Side } from "../core/types";
 import type { PaddleState, PlayerState } from "../physics/State";
 
 /** Lightweight articulated athlete whose striking hand follows the actual racket. */
 export class PlayerVisual {
   readonly group = new THREE.Group();
+  private readonly head = new THREE.Group();
   private readonly upperArm: THREE.Mesh;
   private readonly forearm: THREE.Mesh;
   private readonly leftArm: THREE.Mesh;
@@ -42,7 +44,12 @@ export class PlayerVisual {
       return mesh;
     };
 
-    const torso = add(new THREE.CylinderGeometry(0.19, 0.135, 0.47, 12), jersey, 0, 1.08, 0);
+    const torsoProfile = [
+      [0.132, -0.235], [0.146, -0.21], [0.145, -0.13], [0.158, -0.03],
+      [0.184, 0.10], [0.195, 0.18], [0.176, 0.225], [0.080, 0.255]
+    ].map(([radius, y]) => new THREE.Vector2(radius, y));
+    const torso = add(new THREE.LatheGeometry(torsoProfile, 32), jersey, 0, 1.08, 0);
+    torso.name = "tailored-jersey";
     torso.scale.z = 0.72;
     const chest = add(new THREE.SphereGeometry(0.177, 18, 12), jersey, 0, 1.215, 0);
     chest.scale.set(1, 0.35, 0.72);
@@ -54,6 +61,7 @@ export class PlayerVisual {
     add(new THREE.BoxGeometry(0.035, 0.37, 0.008), stripe, 0.15, 1.09, this.forward * 0.101);
     const crest = add(new THREE.CircleGeometry(0.032, 16), stripe, 0, 1.205, this.forward * 0.129);
     crest.rotation.y = this.forward > 0 ? 0 : Math.PI;
+    const headStart = this.group.children.length;
     const face = add(new THREE.SphereGeometry(0.105, 20, 16), skin, 0, 1.51, 0);
     face.scale.set(0.93, 1.06, 0.96);
     const cap = add(new THREE.SphereGeometry(0.109, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.48), hair, 0, 1.535, 0);
@@ -70,6 +78,13 @@ export class PlayerVisual {
       brow.rotation.z = x > 0 ? -0.12 : 0.12;
     }
     add(new THREE.BoxGeometry(0.032, 0.004, 0.004), hair, 0, 1.456, this.forward * 0.105);
+    this.head.name = "tracking-head";
+    this.head.position.set(0, 1.40, 0);
+    for (const part of this.group.children.slice(headStart)) {
+      part.position.y -= 1.40;
+      this.head.add(part);
+    }
+    this.group.add(this.head);
     add(new THREE.CylinderGeometry(0.14, 0.16, 0.22, 12), shorts, 0, 0.745, 0);
     const limbGeometry = new THREE.CylinderGeometry(0.046, 0.063, 1, 12);
     const forearmGeometry = new THREE.CylinderGeometry(0.033, 0.044, 1, 12);
@@ -81,6 +96,20 @@ export class PlayerVisual {
     this.otherHand = add(new THREE.SphereGeometry(0.042, 12, 10), skin, 0, 0, 0);
     this.elbows.push(add(new THREE.SphereGeometry(0.044, 12, 10), skin, 0, 0, 0));
     this.elbows.push(add(new THREE.SphereGeometry(0.044, 12, 10), skin, 0, 0, 0));
+    // Curled fingers and thumb around the handle, parented to the striking hand.
+    for (let finger = 0; finger < 4; finger += 1) {
+      const digit = new THREE.Mesh(new THREE.CapsuleGeometry(0.009, 0.031, 3, 6), skin);
+      digit.position.set(-0.022 + finger * 0.014, -0.017, this.forward * 0.023);
+      digit.rotation.x = this.forward * 0.8;
+      this.hand.add(digit);
+    }
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.026, 3, 6), skin);
+    thumb.position.set(0.033, 0.008, this.forward * 0.02);
+    thumb.rotation.z = -0.7;
+    this.hand.add(thumb);
+    const wristband = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.025, 16), stripe);
+    wristband.position.y = 0.041;
+    this.hand.add(wristband);
     for (const x of [-0.088, 0.088]) {
       const thigh = add(new THREE.CylinderGeometry(0.067, 0.087, 1, 12), shorts, x, 0.55, 0);
       const calf = add(new THREE.CylinderGeometry(0.058, 0.042, 1, 12), skin, x, 0.24, 0);
@@ -90,6 +119,14 @@ export class PlayerVisual {
       const sockBand = add(new THREE.CylinderGeometry(0.053, 0.049, 0.10, 10), sock, x, 0.14, 0);
       const outsole = add(new THREE.SphereGeometry(0.106, 12, 8), sole, x, 0.025, this.forward * 0.1);
       outsole.scale.set(0.67, 0.11, 1.2);
+      for (let lace = 0; lace < 4; lace += 1) {
+        const detail = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.055, 0.055), sole);
+        detail.position.set(0, 0.82, -0.35 + lace * 0.22);
+        // Shoe geometry has a 0.11 m radius; scale detail to its local units.
+        detail.scale.setScalar(0.11);
+        detail.position.multiplyScalar(0.11);
+        foot.add(detail);
+      }
       this.thighs.push(thigh);
       this.calves.push(calf);
       this.shoes.push(foot);
@@ -99,7 +136,7 @@ export class PlayerVisual {
     }
   }
 
-  sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number): void {
+  sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number, ballPosition?: { x: number; y: number; z: number }): void {
     const position = player.previousPosition.clone().lerp(player.position, alpha);
     this.group.position.set(position.x, position.y, position.z);
     const hand = new THREE.Vector3(
@@ -108,7 +145,16 @@ export class PlayerVisual {
       paddle.previousPosition.z + (paddle.position.z - paddle.previousPosition.z) * alpha - position.z
     );
     const shoulder = new THREE.Vector3(0.205, 1.27, 0);
-    const elbow = shoulder.clone().lerp(hand, 0.48).add(new THREE.Vector3(0.11, -0.08, -this.forward * 0.06));
+    const elbow = new THREE.Vector3();
+    solveTwoBone(shoulder, hand, new THREE.Vector3(0.48, 0.98, -this.forward * 0.15),
+      0.34, 0.33, elbow, hand);
+    if (ballPosition) {
+      const dx = ballPosition.x - position.x;
+      const dz = (ballPosition.z - position.z) * this.forward;
+      this.head.rotation.y = THREE.MathUtils.clamp(Math.atan2(dx * this.forward, Math.max(0.1, dz)), -0.65, 0.65);
+      this.head.rotation.x = THREE.MathUtils.clamp(
+        -(ballPosition.y - position.y - 1.50) * this.forward * 0.3, -0.24, 0.24);
+    }
     this.placeSegment(this.upperArm, shoulder, elbow);
     this.placeSegment(this.forearm, elbow, hand);
     this.elbows[0].position.copy(elbow);

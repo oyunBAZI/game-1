@@ -90,18 +90,22 @@ export function resolvePaddleContact(
   const normalImpulse = -(1 + rubber.restitution) * approach * ball.mass;
   ball.velocity.addScaled(contactNormal, normalImpulse / ball.mass);
   const arm = contactNormal.clone().multiplyScalar(-BALL.radius);
-  const tangential = relative.clone().add(new Vec3().crossVectors(ball.angularVelocity, arm)).projectOnPlane(contactNormal);
+  // Spin input represents a finite rubber brushing velocity, not free angular
+  // energy injected after contact. Its effect shares the Coulomb impulse budget.
+  const brushVelocity = new Vec3().crossVectors(contactNormal,
+    desiredSpin.clone().clampMagnitude(1000)).multiplyScalar(BALL.radius * 0.35);
+  const tangential = relative.clone().sub(brushVelocity)
+    .add(new Vec3().crossVectors(ball.angularVelocity, arm)).projectOnPlane(contactNormal);
   const slip = tangential.length();
-  const desired = desiredSpin.clone().clampMagnitude(1000);
   const grip = clamp(rubber.friction * rubber.spinTransfer, 0, 1.5);
   const effectiveMass = 1 / (1 / ball.mass + BALL.radius * BALL.radius / BALL.inertia);
   const tangentImpulse = tangential.multiplyScalar(-Math.min(
-    effectiveMass * rubber.spinTransfer,
+    effectiveMass * clamp(rubber.spinTransfer, 0, 1),
     slip > 1e-8 ? grip * normalImpulse / slip : 0
   ));
   ball.velocity.addScaled(tangentImpulse, 1 / ball.mass);
   const contactTorque = new Vec3().crossVectors(arm, tangentImpulse).multiplyScalar(1 / BALL.inertia);
-  ball.angularVelocity.add(contactTorque).addScaled(desired, 0.35);
+  ball.angularVelocity.add(contactTorque);
   ball.velocity.clampMagnitude(55);
   ball.angularVelocity.clampMagnitude(1600);
   const energyAfter = kineticEnergy(ball);

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createArenaAudience } from "./ArenaAudience";
 import { TABLE } from "../physics/constants";
 import type { MaterialPalette } from "./ProceduralMaterials";
 
@@ -18,6 +19,7 @@ export class ArenaVisual {
     this.signageTexture = this.createSignage();
     this.addBarriers(materials);
     this.addStands(materials);
+    this.group.add(createArenaAudience());
     this.scoreCanvas = document.createElement("canvas");
     this.scoreCanvas.width = 1024;
     this.scoreCanvas.height = 256;
@@ -38,6 +40,14 @@ export class ArenaVisual {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
+    const court = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 10.3),
+      new THREE.MeshStandardMaterial({ color: 0x163d50, roughness: 0.87,
+        bumpMap: materials.floor.bumpMap, bumpScale: 0.0015 }));
+    court.name = "competition-court";
+    court.rotation.x = -Math.PI / 2;
+    court.position.y = 0.002;
+    court.receiveShadow = true;
+    this.group.add(court);
     const underlay = new THREE.Mesh(
       new THREE.PlaneGeometry(13.8, 17.8),
       new THREE.MeshStandardMaterial({ color: 0x223b43, roughness: 0.78, metalness: 0.05 })

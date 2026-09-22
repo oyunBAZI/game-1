@@ -43,7 +43,7 @@ export class BallPredictor {
     for (let time = 0; time < duration; time += step) {
       const beforeZ = sim.position.z;
       const result = this.world.fixedStep(Math.min(step, duration - time));
-      const bounced = result.contacts.some((contact) => contact.kind === "table" || contact.kind === "edge");
+      const bounced = result.contacts.some((contact) => contact.kind === "table" || (contact.kind === "edge" && contact.normal.y > 0));
       if (beforeZ * sim.position.z <= 0 && sim.position.y > TABLE.top + TABLE.netHeight) crossedNet = true;
       const point = {
         time: Math.min(duration, time + step),
