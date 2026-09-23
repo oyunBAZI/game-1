@@ -13,6 +13,7 @@ export class ArenaVisual {
     this.group.name = "arena-visual";
     this.addFloor(materials);
     this.addWalls(materials);
+    this.addArchitecture(materials);
     this.addCourtMarkers(materials);
     this.addCeilingRig(materials);
     this.signageTexture = this.createSignage();
@@ -38,13 +39,23 @@ export class ArenaVisual {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
-    const underlay = new THREE.Mesh(
-      new THREE.PlaneGeometry(13.8, 17.8),
-      new THREE.MeshStandardMaterial({ color: 0x223b43, roughness: 0.78, metalness: 0.05 })
-    );
-    underlay.rotation.x = -Math.PI / 2;
-    underlay.position.y = -0.006;
-    this.group.add(underlay);
+    const playingFloor = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 8.6), materials.floor.clone());
+    (playingFloor.material as THREE.MeshStandardMaterial).color.setHex(0xd1e6e6);
+    playingFloor.rotation.x = -Math.PI / 2;
+    playingFloor.position.y = 0.003;
+    playingFloor.receiveShadow = true;
+    this.group.add(playingFloor);
+    const trim = new THREE.MeshStandardMaterial({ color: 0x85a7aa, metalness: 0.56, roughness: 0.44 });
+    for (const x of [-3.91, 3.91]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.008, 8.66), trim);
+      strip.position.set(x, 0.007, 0);
+      this.group.add(strip);
+    }
+    for (const z of [-4.31, 4.31]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(7.84, 0.008, 0.022), trim);
+      strip.position.set(0, 0.007, z);
+      this.group.add(strip);
+    }
   }
 
   private addWalls(materials: MaterialPalette): void {
@@ -62,8 +73,51 @@ export class ArenaVisual {
     this.group.add(right);
   }
 
+  private addArchitecture(materials: MaterialPalette): void {
+    const charcoal = new THREE.MeshStandardMaterial({ color: 0x152933, metalness: 0.46, roughness: 0.54 });
+    const copper = new THREE.MeshStandardMaterial({ color: 0x8b8070, metalness: 0.64, roughness: 0.41 });
+    const accent = new THREE.MeshStandardMaterial({ color: 0x37a7a9, emissive: 0x136368, emissiveIntensity: 0.7 });
+    // Ribbed walls, recessed spectator gallery and continuous arena fascia.
+    for (const x of [-6.6, -4.4, -2.2, 0, 2.2, 4.4, 6.6]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.085, 4.65, 0.15), charcoal);
+      rib.position.set(x, 2.42, -5.71);
+      this.group.add(rib);
+      const inset = new THREE.Mesh(new THREE.BoxGeometry(0.018, 2.1, 0.16), copper);
+      inset.position.set(x + 0.061, 2.8, -5.61);
+      this.group.add(inset);
+    }
+    for (const y of [1.45, 4.32]) {
+      const fascia = new THREE.Mesh(new THREE.BoxGeometry(13.7, 0.12, 0.19), charcoal);
+      fascia.position.set(0, y, -5.61);
+      this.group.add(fascia);
+      const light = new THREE.Mesh(new THREE.BoxGeometry(13.35, 0.012, 0.012), accent);
+      light.position.set(0, y + 0.067, -5.5);
+      this.group.add(light);
+    }
+    for (const x of [-6.88, 6.88]) {
+      for (const z of [-5.25, -3, -0.75, 1.5, 3.75]) {
+        const upright = new THREE.Mesh(new THREE.BoxGeometry(0.13, 4.8, 0.14), charcoal);
+        upright.position.set(x, 2.45, z);
+        this.group.add(upright);
+        const sconce = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.9, 0.045), accent);
+        sconce.position.set(x + (x < 0 ? 0.085 : -0.085), 3.16, z);
+        this.group.add(sconce);
+      }
+    }
+    for (const z of [-3.9, -1.95, 0, 1.95, 3.9]) {
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(13.5, 0.075, 0.075), materials.metal);
+      truss.position.set(0, 5.02, z);
+      this.group.add(truss);
+      for (const x of [-5, 5]) {
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.23, 0.28), charcoal);
+        bracket.position.set(x, 4.88, z);
+        this.group.add(bracket);
+      }
+    }
+  }
+
   private addCourtMarkers(materials: MaterialPalette): void {
-    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x31545d, transparent: true, opacity: 0.52 });
+    const lineMaterial = new THREE.MeshStandardMaterial({ color: 0x8aa8ab, transparent: true, opacity: 0.46, roughness: 0.8 });
     for (const z of [-4.2, -2.7, 2.7, 4.2]) {
       const line = new THREE.Mesh(new THREE.BoxGeometry(12.5, 0.004, 0.018), lineMaterial);
       line.position.set(0, 0.004, z);
@@ -173,6 +227,7 @@ export class ArenaVisual {
     const dummy = new THREE.Object3D();
     let index = 0;
     const shirtColors = [0x233a43, 0x537077, 0x87938f, 0x30606a, 0x3f4a51, 0x725c50];
+    const skinColors = [0xcaa681, 0x8b5b46, 0xd6b798, 0xa57a61, 0x665049];
     for (let row = 0; row < rows; row += 1) {
       const z = -3.85 - row * 0.49;
       const height = 0.13 + row * 0.24;
@@ -199,6 +254,7 @@ export class ArenaVisual {
         dummy.position.y += 0.19;
         dummy.updateMatrix();
         heads.setMatrixAt(index - 1, dummy.matrix);
+        heads.setColorAt(index - 1, new THREE.Color(skinColors[(col * 7 + row * 3) % skinColors.length]));
       }
     }
     seats.receiveShadow = true;

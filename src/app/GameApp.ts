@@ -27,11 +27,8 @@ export class GameApp {
   readonly settings: SettingsPanel;
   readonly profiler = new Profiler();
   readonly debug: DebugOverlay;
-  private lastFrame = performance.now();
   private fps = 60;
   private cameraIndex = 0;
-  private inputRaf = 0;
-  private disposed = false;
 
   constructor(private readonly root: HTMLElement) {
     applyGlobalUiStyles();
@@ -61,25 +58,15 @@ export class GameApp {
   }
 
   start(): void {
+    this.loop.onBeforeStep((time) => this.simulation.setInput(this.input.sample(time)));
     this.loop.onFrame((dt, alpha) => {
+      if (dt > 0) this.fps = this.fps * 0.92 + (1 / dt) * 0.08;
       this.profiler.time("render", () => this.renderer.update(dt, alpha));
       this.hud.update(dt);
       this.debug.update(this.fps);
     });
     this.loop.start();
-    this.animate();
   }
-
-  private animate = (): void => {
-    if (this.disposed) return;
-    const now = performance.now();
-    const dt = Math.max(0.001, (now - this.lastFrame) / 1000);
-    this.lastFrame = now;
-    this.fps = this.fps * 0.92 + (1 / dt) * 0.08;
-    const input = this.input.sample(now / 1000);
-    this.simulation.setInput(input);
-    this.inputRaf = requestAnimationFrame(this.animate);
-  };
 
   private cycleCamera(): void {
     this.cameraIndex = (this.cameraIndex + 1) % 3;
@@ -88,8 +75,6 @@ export class GameApp {
   }
 
   dispose(): void {
-    this.disposed = true;
-    cancelAnimationFrame(this.inputRaf);
     this.loop.dispose();
     this.input.dispose();
     this.hud.dispose();

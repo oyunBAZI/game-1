@@ -1,4 +1,5 @@
 import { EventBus } from "../core/EventBus";
+import { FixedStepLoop } from "../core/FixedStepLoop";
 import { Vec3 } from "../core/Vec3";
 import type { CollisionContact, InputFrame, Side } from "../core/types";
 import { GameSimulation } from "../game/GameSimulation";
@@ -40,6 +41,27 @@ function testTableAndNet(): void {
   assert(result.contacts.some((hit) => hit.kind === "table"), "fast ball must hit table, not tunnel through it");
   assert(ball.position.y >= TABLE.top + BALL.radius, "bounce must resolve above the playing surface");
   assert(ball.velocity.y > 0, "table must reverse the downward velocity");
+
+  ball.reset(new Vec3(TABLE.width / 2 + BALL.radius + 0.025, TABLE.top - 0.012, 0.5), new Vec3(-12, 0, 0));
+  const apron = world.fixedStep(1 / 120);
+  assert(apron.contacts.some((hit) => hit.surfaceId === "table-side"),
+    "a fast horizontal ball must strike the vertical apron");
+  assert(ball.velocity.x > 0, "side contact must reflect out from the table");
+
+  ball.reset(new Vec3(TABLE.width / 2 + 0.012, TABLE.top + 0.05, 0.5), new Vec3(0, -12, 0));
+  const edge = world.fixedStep(1 / 120);
+  assert(edge.contacts.some((hit) => hit.surfaceId === "table-edge"),
+    "a grazing ball must reach the rounded top edge");
+  assert(ball.velocity.x > 0 && ball.velocity.y > 0, "top edge should deflect in both axes");
+
+  ball.reset(new Vec3(TABLE.width / 2 + BALL.radius + 0.03, TABLE.top + 0.05, 0.5), new Vec3(0, -12, 0));
+  const miss = world.fixedStep(1 / 120);
+  assert(!miss.contacts.some((hit) => hit.kind === "table" || hit.kind === "edge"),
+    "a ball outside the edge radius must miss the table");
+  ball.reset(new Vec3(TABLE.width / 2 + 0.016, TABLE.top + 0.016, 0.5), new Vec3(0, 0, -12));
+  const cornerMiss = world.fixedStep(1 / 120);
+  assert(!cornerMiss.contacts.some((hit) => hit.kind === "table" || hit.kind === "edge"),
+    "the expanded box must not produce a false hit at a rounded corner");
 
   for (const sign of [-1, 1]) {
     ball.reset(new Vec3(0, TABLE.top + 0.08, sign * 0.15), new Vec3(0, 0, -sign * 28));
@@ -111,10 +133,18 @@ function testRallyScoring(): void {
 
   events.emit("rally:start", { server: "home" });
   events.emit("physics:contact", contact("table", "home"));
+  events.emit("physics:contact", {
+    ...contact("edge", "away"), surfaceId: "table-side"
+  });
+  assert(scoreboard.score("away") === 2,
+    "a vertical apron strike must not count as a legal service bounce");
+
+  events.emit("rally:start", { server: "home" });
+  events.emit("physics:contact", contact("table", "home"));
   events.emit("physics:contact", contact("table", "away"));
   events.emit("physics:contact", contact("paddle", "away"));
   events.emit("physics:contact", contact("paddle", "home"));
-  assert(scoreboard.score("away") === 2, "volley before bounce awards striker's opponent");
+  assert(scoreboard.score("away") === 3, "volley before bounce awards striker's opponent");
   rally.dispose();
 
   const letEvents = new EventBus();
@@ -223,6 +253,12 @@ function testModelConstruction(): void {
 }
 
 export function runGameTests(): void {
+  const loop = new FixedStepLoop(new EventBus(), 120);
+  let sampled = false;
+  loop.onBeforeStep(() => { sampled = true; });
+  loop.add({ fixedUpdate: () => assert(sampled, "input must be sampled before simulation") });
+  assert(loop.step(1 / 60) === 2, "fixed update should run twice at 120 Hz for a 60 Hz frame");
+  loop.dispose();
   const keyboard = mergeInputFrames(emptyInputFrame(), { swing: 1, serve: true });
   const pointer = mergeInputFrames(keyboard, { swing: 0, serve: false });
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");

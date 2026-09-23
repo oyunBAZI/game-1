@@ -12,6 +12,7 @@ export class FixedStepLoop {
   private raf = 0;
   private lastTime = 0;
   private running = false;
+  private beforeStepListeners = new Set<(time: number) => void>();
   private frameListeners = new Set<(dt: number, alpha: number) => void>();
 
   constructor(private readonly events: EventBus, fixedHz = 240) {
@@ -31,6 +32,11 @@ export class FixedStepLoop {
     return () => this.frameListeners.delete(listener);
   }
 
+  onBeforeStep(listener: (time: number) => void): () => void {
+    this.beforeStepListeners.add(listener);
+    return () => this.beforeStepListeners.delete(listener);
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -43,7 +49,8 @@ export class FixedStepLoop {
     if (this.raf) cancelAnimationFrame(this.raf);
   }
 
-  step(frameDelta: number): number {
+  step(frameDelta: number, time = performance.now() / 1000): number {
+    for (const listener of this.beforeStepListeners) listener(time);
     return this.clock.advance(frameDelta, (dt, tick) => {
       for (const participant of [...this.participants]) participant.fixedUpdate(dt, tick);
       this.events.emit("simulation:step", { tick, dt });
@@ -54,7 +61,7 @@ export class FixedStepLoop {
     if (!this.running) return;
     const dt = (time - this.lastTime) / 1000;
     this.lastTime = time;
-    this.step(dt);
+    this.step(dt, time / 1000);
     for (const listener of this.frameListeners) listener(dt, this.clock.alpha);
     this.raf = requestAnimationFrame((next) => this.frame(next));
   }
@@ -62,6 +69,7 @@ export class FixedStepLoop {
   dispose(): void {
     this.stop();
     this.participants.length = 0;
+    this.beforeStepListeners.clear();
     this.frameListeners.clear();
   }
 }

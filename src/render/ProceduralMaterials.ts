@@ -26,16 +26,20 @@ function standard(color: number, roughness: number, metalness = 0): THREE.MeshSt
 
 export function createMaterialPalette(): MaterialPalette {
   const grain = createCanvasNoiseTexture(128);
-  grain.repeat.set(20, 36);
+  grain.repeat.set(18, 28);
   const floorGrain = grain.clone();
-  floorGrain.repeat.set(55, 70);
+  floorGrain.repeat.set(62, 82);
   floorGrain.needsUpdate = true;
+  const tablePaint = createSurfaceTexture(256, [8, 82, 111], 5, 2);
+  tablePaint.repeat.set(2, 4);
+  const floorVinyl = createSurfaceTexture(256, [45, 76, 84], 9, 6);
+  floorVinyl.repeat.set(8, 11);
   const table = new THREE.MeshPhysicalMaterial({
-    color: 0x075273, roughness: 0.5, metalness: 0.02,
-    clearcoat: 0.14, clearcoatRoughness: 0.68, bumpMap: grain, bumpScale: 0.0015
+    color: 0xffffff, map: tablePaint, roughness: 0.43, metalness: 0.02,
+    clearcoat: 0.21, clearcoatRoughness: 0.52, bumpMap: grain, bumpScale: 0.00065
   });
   const floor = new THREE.MeshStandardMaterial({
-    color: 0x263b44, roughness: 0.88, bumpMap: floorGrain, bumpScale: 0.003
+    color: 0xffffff, map: floorVinyl, roughness: 0.72, bumpMap: floorGrain, bumpScale: 0.0018
   });
   return {
     table,
@@ -48,9 +52,40 @@ export function createMaterialPalette(): MaterialPalette {
     rubberRed: standard(0xb02433, 0.8),
     rubberBlack: standard(0x151b22, 0.78),
     wood: standard(0x915c37, 0.59),
-    metal: standard(0x8998a0, 0.3, 0.72),
+    metal: standard(0x88969d, 0.34, 0.68),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };
+}
+
+/** Baked, seeded pigment variation; no network texture requests at runtime. */
+function createSurfaceTexture(size: number, color: [number, number, number], variation: number, seams: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const image = context.createImageData(size, size);
+    let seed = 15679093;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+        const grain = ((seed >>> 0) % 256) / 255 - 0.5;
+        const wave = Math.sin(x * 0.09 + Math.sin(y * 0.06) * 2) * 0.35;
+        const seam = x < seams || y < seams ? -2 : 0;
+        const offset = (grain + wave) * variation + seam;
+        const index = (y * size + x) * 4;
+        for (let channel = 0; channel < 3; channel += 1) {
+          image.data[index + channel] = Math.max(0, Math.min(255, color[channel] + offset));
+        }
+        image.data[index + 3] = 255;
+      }
+    }
+    context.putImageData(image, 0, 0);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 export function createLineMaterial(color = 0xf1f8fb): THREE.LineBasicMaterial {

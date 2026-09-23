@@ -6,14 +6,14 @@ export class ArenaLighting {
   readonly fill: THREE.HemisphereLight;
   readonly rim: THREE.PointLight;
 
-  constructor(shadows = true) {
+  constructor(shadows = true, shadowMapSize = 2048) {
     this.group.name = "arena-lighting";
-    this.fill = new THREE.HemisphereLight(0xd6e8ed, 0x162d31, 0.9);
+    this.fill = new THREE.HemisphereLight(0xd8e8f1, 0x20303b, 0.84);
     this.group.add(this.fill);
-    this.key = new THREE.DirectionalLight(0xfff4e7, 2.15);
+    this.key = new THREE.DirectionalLight(0xfff1de, 2.35);
     this.key.position.set(2.5, 5.8, 3.6);
     this.key.castShadow = shadows;
-    this.key.shadow.mapSize.set(2048, 2048);
+    this.key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     this.key.shadow.camera.near = 0.1;
     this.key.shadow.camera.far = 18;
     this.key.shadow.camera.left = -5;
@@ -24,7 +24,10 @@ export class ArenaLighting {
     this.key.shadow.normalBias = 0.018;
     this.key.shadow.radius = 2;
     this.group.add(this.key);
-    this.rim = new THREE.PointLight(0x46dcd1, 13, 9, 2);
+    const bounce = new THREE.DirectionalLight(0xbedce9, 0.72);
+    bounce.position.set(-4.3, 2.8, -3.5);
+    this.group.add(bounce);
+    this.rim = new THREE.PointLight(0x72bfc4, 9, 8, 2);
     this.rim.position.set(-3.5, 2.6, -2.5);
     this.group.add(this.rim);
     this.addPracticalLights();

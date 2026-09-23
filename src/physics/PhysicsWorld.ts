@@ -172,10 +172,11 @@ export class PhysicsWorld {
       this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
       ball.lastContact = "net";
     } else {
-      resolveTableBounce(ball, hit.normal, hit.surface === "edge"
-        ? { ...this.tuning.table, restitution: this.tuning.table.edgeRestitution }
-        : this.tuning.table);
-      ball.grounded = true;
+      resolveTableBounce(ball, hit.normal, hit.surface === "top" ? this.tuning.table : {
+        ...this.tuning.table,
+        restitution: hit.surface === "side" ? this.tuning.table.edgeRestitution * 0.7 : this.tuning.table.edgeRestitution
+      });
+      ball.grounded = hit.surface === "top";
       ball.lastContact = hit.surface === "top" ? "table" : "edge";
     }
     ball.position.copy(contact.point).addScaled(normal, ball.radius + 0.0005);

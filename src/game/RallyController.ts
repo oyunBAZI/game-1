@@ -103,6 +103,12 @@ export class RallyController {
     }
     if (contact.kind === "table" || contact.kind === "edge") {
       const side: Side = contact.point.z >= 0 ? "home" : "away";
+      // A strike against the vertical apron or underside does not land on the
+      // playing surface, even though the ball still receives a physical impulse.
+      if (contact.surfaceId === "table-side") {
+        this.end(oppositeSide(this.state.lastHitter ?? this.state.server ?? side), "side-contact");
+        return;
+      }
       if (side !== this.state.expectedBounce) {
         this.end(oppositeSide(this.state.lastHitter ?? this.state.server ?? side), "wrong-side-bounce");
         return;
