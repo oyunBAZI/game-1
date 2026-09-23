@@ -70,8 +70,8 @@ export class RenderBridge {
     this.ball.sync(state.ball, alpha, dt, this.simulation.config.graphics.showTrails);
     this.paddles.home.sync(state.paddles.home, alpha);
     this.paddles.away.sync(state.paddles.away, alpha);
-    this.players.home.sync(state.players.home, state.paddles.home, alpha, state.time);
-    this.players.away.sync(state.players.away, state.paddles.away, alpha, state.time);
+    this.players.home.sync(state.players.home, state.paddles.home, alpha, state.time, state.ball);
+    this.players.away.sync(state.players.away, state.paddles.away, alpha, state.time, state.ball);
     this.table.updateNet(this.simulation.world.net.positions());
     this.contacts.update(dt);
     const score = this.simulation.match.scoreboard;

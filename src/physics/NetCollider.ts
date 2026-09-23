@@ -9,6 +9,11 @@ interface NetNode {
   rest: Vec3;
 }
 
+export interface NetSnapshot {
+  positions: number[];
+  velocities: number[];
+}
+
 export class NetCollider {
   readonly centerZ = 0;
   readonly bottomY = TABLE.top;
@@ -17,6 +22,7 @@ export class NetCollider {
   private readonly nodes: NetNode[] = [];
   private readonly columns = 13;
   private readonly rows = 5;
+  private readonly accelerations = new Float64Array(this.columns * this.rows);
 
   constructor() {
     for (let row = 0; row < this.rows; row += 1) {
@@ -35,25 +41,60 @@ export class NetCollider {
     const rightPost = this.detectPost(ball, this.width / 2);
     const rigid = [cord, leftPost, rightPost].filter((hit): hit is CollisionContact => hit !== null)
       .sort((a, b) => a.timeOfImpact - b.timeOfImpact)[0] ?? null;
-    // A ball can fall vertically onto the tape even without crossing the net.
-    if (Math.abs(ball.velocity.z) < 1e-8) return rigid;
-    const sign = ball.velocity.z > 0 ? -1 : 1;
-    const contactZ = sign * (TABLE.netThickness * 0.5 + ball.radius);
     const travel = ball.position.z - ball.previousPosition.z;
-    const fraction = (contactZ - ball.previousPosition.z) / travel;
-    if (fraction < 0 || fraction > 1) return rigid;
-    const center = ball.previousPosition.clone().lerp(ball.position, fraction);
+    // Use the same displaced membrane shown by TableVisual. Checking only z=0
+    // made a visibly bowed net collide at its undeformed rest position.
+    if (Math.abs(travel) < 1e-8) return rigid;
+    const reach = ball.radius + TABLE.netThickness * 0.5 + 0.075;
+    if (Math.min(ball.position.z, ball.previousPosition.z) > reach ||
+        Math.max(ball.position.z, ball.previousPosition.z) < -reach ||
+        Math.min(ball.position.y, ball.previousPosition.y) > this.topY + ball.radius ||
+        Math.max(ball.position.y, ball.previousPosition.y) < this.bottomY - ball.radius ||
+        Math.min(ball.position.x, ball.previousPosition.x) > this.width / 2 + ball.radius ||
+        Math.max(ball.position.x, ball.previousPosition.x) < -this.width / 2 - ball.radius) return rigid;
+    const sign = travel > 0 ? -1 : 1;
+    const center = new Vec3();
+    const signedDistance = (fraction: number): number => {
+      center.copy(ball.previousPosition).lerp(ball.position, fraction);
+      return sign * (center.z - this.displacementAt(center.x, center.y) -
+        sign * (TABLE.netThickness * 0.5 + ball.radius));
+    };
+    let previous = signedDistance(0);
+    if (previous <= 0) return rigid;
+    let fraction = -1;
+    for (let sample = 1; sample <= 8; sample += 1) {
+      const next = sample / 8;
+      const distance = signedDistance(next);
+      if (distance <= 0 && distance < previous) {
+        let low = (sample - 1) / 8;
+        let high = next;
+        for (let iteration = 0; iteration < 18; iteration += 1) {
+          const middle = (low + high) * 0.5;
+          if (signedDistance(middle) > 0) low = middle;
+          else high = middle;
+        }
+        fraction = high;
+        break;
+      }
+      previous = distance;
+    }
+    if (fraction < 0) return rigid;
+    center.copy(ball.previousPosition).lerp(ball.position, fraction);
     if (Math.abs(center.x) > this.width / 2 + ball.radius ||
         center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius - 0.006) return rigid;
-    if (rigid && rigid.timeOfImpact < fraction) return rigid;
-    const normal = new Vec3(0, 0, sign);
+    if (rigid && rigid.timeOfImpact <= fraction) return rigid;
+    const dx = (this.displacementAt(center.x + 0.006, center.y) -
+      this.displacementAt(center.x - 0.006, center.y)) / 0.012;
+    const dy = (this.displacementAt(center.x, center.y + 0.004) -
+      this.displacementAt(center.x, center.y - 0.004)) / 0.008;
+    const normal = new Vec3(-dx * sign, -dy * sign, sign).normalize();
     return {
       kind: "net",
       timeOfImpact: fraction,
       point: center.clone().subScaled(normal, ball.radius).toJSON(),
       normal: normal.toJSON(),
       penetration: 0,
-      relativeSpeed: ball.velocity.length(),
+      relativeSpeed: Math.max(0, -ball.velocity.dot(normal)),
       surfaceId: "net-mesh"
     };
   }
@@ -148,27 +189,90 @@ export class NetCollider {
       for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
         const targetRow = Math.max(0, Math.min(this.rows - 1, row + rowOffset));
         const targetColumn = Math.max(0, Math.min(this.columns - 1, column + columnOffset));
+        if (targetRow === this.rows - 1 || targetColumn === 0 || targetColumn === this.columns - 1) continue;
         const node = this.nodes[targetRow * this.columns + targetColumn];
         const distance = Math.sqrt(rowOffset * rowOffset + columnOffset * columnOffset);
-        // A lightweight visual membrane responds more visibly than its ball impulse.
-        node.velocity.addScaled(impulse, 45 / (1 + distance * 2));
+        node.velocity.z = Math.max(-2.5, Math.min(2.5,
+          node.velocity.z + impulse.z * 45 / (1 + distance * 2)));
       }
     }
   }
 
   step(dt: number): void {
-    for (const node of this.nodes) {
-      const spring = node.rest.clone().sub(node.position).multiplyScalar(160);
-      const damping = node.velocity.clone().multiplyScalar(-11);
-      node.velocity.addScaled(spring.add(damping), dt);
-      node.position.addScaled(node.velocity, dt);
-      node.position.x = Math.max(-this.width / 2, Math.min(this.width / 2, node.position.x));
-      node.position.y = Math.max(this.bottomY, Math.min(this.topY, node.position.y));
+    // Read every neighbor before advancing any node so a wave travels through
+    // the weave symmetrically. Posts and tape remain fixed as real anchors.
+    for (let row = 0; row < this.rows; row += 1) {
+      for (let column = 0; column < this.columns; column += 1) {
+        const index = row * this.columns + column;
+        if (row === this.rows - 1 || column === 0 || column === this.columns - 1) {
+          this.accelerations[index] = 0;
+          continue;
+        }
+        const node = this.nodes[index];
+        const neighbors = this.nodes[index - 1].position.z + this.nodes[index + 1].position.z +
+          (row > 0 ? this.nodes[index - this.columns].position.z : node.rest.z) +
+          this.nodes[index + this.columns].position.z;
+        this.accelerations[index] = (node.rest.z - node.position.z) * 170 +
+          (neighbors - 4 * node.position.z) * 95 - node.velocity.z * 12;
+      }
     }
+    for (let index = 0; index < this.nodes.length; index += 1) {
+      const node = this.nodes[index];
+      node.velocity.z += this.accelerations[index] * dt;
+      node.position.z = Math.max(-0.075, Math.min(0.075,
+        node.position.z + node.velocity.z * dt));
+    }
+  }
+
+  /** Bilinear interpolation in the same 13 x 5 grid used by the rendered net. */
+  private displacementAt(x: number, y: number): number {
+    return this.interpolate(x, y, "position");
+  }
+
+  private interpolate(x: number, y: number, field: "position" | "velocity"): number {
+    const u = Math.max(0, Math.min(this.columns - 1, (x / this.width + 0.5) * (this.columns - 1)));
+    const v = Math.max(0, Math.min(this.rows - 1, (y - this.bottomY) /
+      TABLE.netHeight * (this.rows - 1)));
+    const column = Math.min(this.columns - 2, Math.floor(u));
+    const row = Math.min(this.rows - 2, Math.floor(v));
+    const a = u - column;
+    const b = v - row;
+    const base = row * this.columns + column;
+    const lower = this.nodes[base][field].z * (1 - a) + this.nodes[base + 1][field].z * a;
+    const upper = this.nodes[base + this.columns][field].z * (1 - a) +
+      this.nodes[base + this.columns + 1][field].z * a;
+    return lower * (1 - b) + upper * b;
   }
 
   positions(): Vec3[] {
     return this.nodes.map((node) => node.position.clone());
+  }
+
+  velocityAt(x: number, y: number): Vec3 {
+    return new Vec3(0, 0, this.interpolate(x, y, "velocity"));
+  }
+
+  snapshot(): NetSnapshot {
+    return {
+      positions: this.nodes.map((node) => node.position.z),
+      velocities: this.nodes.map((node) => node.velocity.z)
+    };
+  }
+
+  restore(snapshot?: NetSnapshot): void {
+    if (!snapshot || snapshot.positions.length !== this.nodes.length ||
+        snapshot.velocities.length !== this.nodes.length ||
+        !snapshot.positions.every(Number.isFinite) || !snapshot.velocities.every(Number.isFinite)) {
+      this.reset();
+      return;
+    }
+    for (let index = 0; index < this.nodes.length; index += 1) {
+      const node = this.nodes[index];
+      const anchored = index % this.columns === 0 || index % this.columns === this.columns - 1 ||
+        index >= (this.rows - 1) * this.columns;
+      node.position.z = anchored ? 0 : Math.max(-0.075, Math.min(0.075, snapshot.positions[index]));
+      node.velocity.z = anchored ? 0 : Math.max(-2.5, Math.min(2.5, snapshot.velocities[index]));
+    }
   }
 
   reset(): void {

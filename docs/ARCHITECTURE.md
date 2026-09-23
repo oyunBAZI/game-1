@@ -25,7 +25,7 @@ The physics and rules layers do not import Three.js. This is the most important 
 5. RenderBridge interpolates authoritative simulation state for Three.js.
 6. GameHud, AudioBus, telemetry, and replay listeners react to events.
 
-ArenaDressing adds instanced ceiling and venue specific scene geometry to ArenaVisual. ContactEffects listens for authoritative table impacts through RenderBridge and fades a small pool of visual cues. Both are presentation only; neither changes contact timing or scoring.
+ArenaDressing adds instanced ceiling and venue specific scene geometry to ArenaVisual. ArenaAtmosphere generates shared floor light pools and venue displays; PlayerVisual's head rig tracks the authoritative ball. ContactEffects listens for authoritative table impacts through RenderBridge and fades a small pool of visual cues. These presentation systems do not change contact timing or scoring. NetCollider owns the physical weave; TableVisual only projects its node positions into the rendered geometry.
 
 ## Authoritative state
 

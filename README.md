@@ -15,12 +15,17 @@ The scene includes articulated athletes with sculpted torsos and procedural spor
 
 ### Latest improvements
 
+- Net impacts now send a wave through coupled strands while the top tape and post edges stay anchored. Ball collisions use the displaced mesh and its local velocity. World snapshots preserve the net's positions and velocities, and AI flight forecasts start from that same state.
+- The opponent waits behind the table without simulating an idle ball before service. During a rally both athletes' body positions stay behind the end lines while their rackets can reach inward.
+- Venue specific side displays and softly pooled overhead light give the four courts more depth. The athlete face, hair and eyes now turn together toward the live ball on a neck rig. The lighting uses a shared procedural texture and adds no downloaded scene assets.
 - The four venues now share instanced overhead softboxes and a coffer ceiling. The National Arena gains a split upper gallery and broadcast rig; the Club Hall gets timber ceiling baffles and pendants; the Training Lab gets a trajectory display; and the Night Court gets a layered light portal. The competition gallery keeps the central scoreboard clear.
 - The table has a subtle bevel and generated micro-roughness maps for light response; athlete poses gain shoulder definition and foot contact shadows. Real table contacts show small transient rings. These additions use bundled geometry and procedurally generated textures.
 - Ball flight uses a midpoint evaluation of drag and Magnus lift with reused scratch vectors in the 240 Hz hot path. Swept post collisions catch strikes outside the net mesh. The AI carries an earlier bounce into its forecast and prepares its racket above the tabletop; regression checks cover those contacts, a full serve and return, and timestep convergence.
 - The National Arena now has instanced spectator galleries along both sidelines. Each venue has its own generated floor finish and backdrop: training lab panels, club wood slats, tournament seating, or a night-court light portal. Athlete jerseys have distinct woven prints, sculpted head silhouettes, shoe details and lateral footwork. The ball casts a soft, height-dependent contact shadow.
 - Racket aim rotates at a bounded angular speed. A vertical drop onto the net tape now receives a cord collision. Trajectory forecasts disable both rackets after every reset and report the first actual tabletop impact; the AI no longer aims from ghost racket rebounds. Rollback snapshots retain the ball's last hitter and contact history. The rendered net now maps its upper row to the physical tape rather than to the floor edge.
 - All four development gates (`npm run typecheck`, `npm run test:simulation`, `npm run validate`, `npm run build`) exercise this pass. There are no external 3D or texture requests. The characters and venues remain procedural game assets, not scanned models or an authored AAA animation pipeline.
+
+The newer lighting and face motion were checked through model construction and production compilation; this pass did not include a verified GPU screenshot. A visual review on a device with WebGL remains necessary before claiming production art quality.
 
 > A high-fidelity, physics-driven 3D table tennis simulation built for the browser with **Three.js**, designed to push WebGL graphics, ball physics, animation, audio, AI, and player control as far as realistically possible.
 

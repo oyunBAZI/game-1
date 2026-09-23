@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Side } from "../core/types";
-import type { PaddleState, PlayerState } from "../physics/State";
+import type { BallState, PaddleState, PlayerState } from "../physics/State";
 
 /** Lightweight articulated athlete whose striking hand follows the actual racket. */
 export class PlayerVisual {
@@ -12,6 +12,8 @@ export class PlayerVisual {
   private readonly sleeve: THREE.Mesh;
   private readonly wristband: THREE.Mesh;
   private readonly torso: THREE.Mesh;
+  private readonly headPivot: THREE.Group;
+  private lastPoseTime = -1;
   private readonly thighs: THREE.Mesh[] = [];
   private readonly calves: THREE.Mesh[] = [];
   private readonly shoes: THREE.Mesh[] = [];
@@ -104,6 +106,7 @@ export class PlayerVisual {
     const shirtHem = add(new THREE.TorusGeometry(0.122, 0.006, 5, 28), stripe, 0, 0.847, 0);
     shirtHem.rotation.x = Math.PI / 2;
     shirtHem.scale.set(1.13, 0.82, 1);
+    const firstHeadPart = this.group.children.length;
     const face = add(createHeadGeometry(), skin, 0, 1.51, 0);
     face.scale.set(0.93, 1.06, 0.96);
     const jaw = add(new THREE.SphereGeometry(0.081, 18, 12), skin, 0, 1.451, this.forward * 0.017);
@@ -132,6 +135,15 @@ export class PlayerVisual {
       brow.rotation.z = x > 0 ? -0.12 : 0.12;
     }
     add(new THREE.BoxGeometry(0.032, 0.004, 0.004), hair, 0, 1.456, this.forward * 0.105);
+    // Parent the whole face to one neck pivot. The athlete can track the real
+    // ball without separate eyes, hair and facial features drifting apart.
+    const headParts = this.group.children.slice(firstHeadPart);
+    this.headPivot = new THREE.Group();
+    this.headPivot.name = "athlete-head-rig";
+    this.headPivot.position.set(0, 1.465, 0);
+    this.group.add(this.headPivot);
+    this.group.updateMatrixWorld(true);
+    for (const part of headParts) this.headPivot.attach(part);
     add(new THREE.CylinderGeometry(0.14, 0.16, 0.22, 12), shorts, 0, 0.745, 0);
     for (const x of [-0.14, 0.14]) {
       add(new THREE.BoxGeometry(0.009, 0.17, 0.015), stripe, x, 0.745, this.forward * 0.03);
@@ -196,9 +208,22 @@ export class PlayerVisual {
     }
   }
 
-  sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number): void {
+  sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number, ball?: BallState): void {
     const position = player.previousPosition.clone().lerp(player.position, alpha);
     this.group.position.set(position.x, position.y, position.z);
+    if (ball) {
+      const dx = ball.position.x - position.x;
+      const dz = this.forward * (ball.position.z - position.z);
+      const dy = ball.position.y - position.y - 1.465;
+      const horizontal = Math.max(0.35, Math.hypot(dx, dz));
+      const yaw = THREE.MathUtils.clamp(this.forward * Math.atan2(dx, Math.max(0.2, dz)), -0.42, 0.42);
+      const pitch = THREE.MathUtils.clamp(-this.forward * Math.atan2(dy, horizontal), -0.22, 0.22);
+      const elapsed = this.lastPoseTime < 0 ? 1 / 60 : Math.max(0, Math.min(0.05, time - this.lastPoseTime));
+      const weight = 1 - Math.exp(-10 * elapsed);
+      this.headPivot.rotation.y += (yaw - this.headPivot.rotation.y) * weight;
+      this.headPivot.rotation.x += (pitch - this.headPivot.rotation.x) * weight;
+    }
+    this.lastPoseTime = time;
     const hand = new THREE.Vector3(
       paddle.previousPosition.x + (paddle.position.x - paddle.previousPosition.x) * alpha - position.x,
       paddle.previousPosition.y + (paddle.position.y - paddle.previousPosition.y) * alpha - position.y - 0.105,

@@ -123,11 +123,12 @@ export function resolvePaddleContact(
   };
 }
 
-export function resolveNetContact(ball: BallState, normal: Vec3, restitution: number): ContactResponse {
+export function resolveNetContact(ball: BallState, normal: Vec3, restitution: number,
+  surfaceVelocity = new Vec3()): ContactResponse {
   const before = ball.velocity.clone();
   const spinBefore = ball.angularVelocity.clone();
   const energyBefore = kineticEnergy(ball);
-  const normalSpeed = ball.velocity.dot(normal);
+  const normalSpeed = ball.velocity.clone().sub(surfaceVelocity).dot(normal);
   if (normalSpeed < 0) ball.velocity.subScaled(normal, (1 + restitution) * normalSpeed);
   ball.velocity.multiplyScalar(0.78);
   ball.angularVelocity.multiplyScalar(0.7);

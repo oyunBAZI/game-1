@@ -2,7 +2,7 @@ import { clamp } from "../core/MathUtils";
 import { Vec3 } from "../core/Vec3";
 import type { PhysicsTuning } from "./constants";
 import { Aerodynamics } from "./Aerodynamics";
-import { BALL } from "./constants";
+import { BALL, TABLE } from "./constants";
 import type { BallState, WorldState } from "./State";
 
 export class BallIntegrator {
@@ -49,9 +49,10 @@ export class BallIntegrator {
       const desired = player.velocity.clone().clampMagnitude(player.maxSpeed);
       player.position.addScaled(desired, dt);
       player.position.x = clamp(player.position.x, -1.25, 1.25);
+      const baseline = TABLE.length / 2 + 0.13;
       player.position.z = player.side === "home"
-        ? clamp(player.position.z, 0.82, 2.1)
-        : clamp(player.position.z, -2.1, -0.82);
+        ? clamp(player.position.z, baseline, 2.1)
+        : clamp(player.position.z, -2.1, -baseline);
       player.energy = clamp(player.energy + dt * 0.07, 0, 1);
     }
   }

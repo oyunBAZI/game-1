@@ -102,6 +102,8 @@ export interface WorldSnapshot {
   ball: BallSnapshot;
   paddles: Record<Side, PaddleSnapshot>;
   players: Record<Side, PlayerSnapshot>;
+  /** Optional for older replay files created before net contacts were deformable. */
+  net?: { positions: number[]; velocities: number[] };
 }
 
 export interface SimulationEvent {

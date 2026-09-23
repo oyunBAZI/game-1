@@ -4,6 +4,7 @@ import { TABLE } from "./constants";
 import type { PhysicsTuning } from "./constants";
 import type { BallState } from "./State";
 import { PhysicsWorld } from "./PhysicsWorld";
+import type { NetCollider } from "./NetCollider";
 
 export interface PredictionPoint {
   time: number;
@@ -31,8 +32,9 @@ export class BallPredictor {
     this.world.state.paddles.away.active = false;
   }
 
-  predict(ball: BallState, duration = 2.5, step = 1 / 120): LandingPrediction {
+  predict(ball: BallState, duration = 2.5, step = 1 / 120, net?: NetCollider): LandingPrediction {
     this.world.reset();
+    if (net) this.world.net.restore(net.snapshot());
     // reset() restores the live game's default active rackets. A forecast must
     // never bounce off an idle player's racket at its reset position.
     this.world.state.paddles.home.active = false;

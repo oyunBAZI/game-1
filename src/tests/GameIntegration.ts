@@ -11,9 +11,10 @@ import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
 import { BallIntegrator } from "../physics/Integrator";
-import { resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
+import { resolveNetContact, resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
 import { BallState } from "../physics/State";
 import { BallPredictor } from "../physics/Predictor";
+import { NetCollider } from "../physics/NetCollider";
 import { PlayerVisual } from "../render/Player";
 import { PaddleVisual } from "../render/Paddle";
 import { TableVisual } from "../render/Table";
@@ -97,6 +98,49 @@ function testTableAndNet(): void {
   const lift = new Aerodynamics(world.tuning).forces(ball).magnus.length();
   assert(lift > 0 && lift < ball.mass * 20,
     "ordinary spin should create bounded aerodynamic lift");
+}
+
+function testWovenNet(): void {
+  const net = new NetCollider();
+  const height = TABLE.top + TABLE.netHeight * 0.43;
+  net.applyImpulse(new Vec3(0, height, 0), new Vec3(0, 0, 0.025));
+  for (let index = 0; index < 8; index += 1) net.step(1 / 240);
+  const nodes = net.positions();
+  const center = nodes[2 * 13 + 6];
+  assert(center.z > 0.015 && nodes[2 * 13 + 8].z > 0,
+    "an impact must displace the weave and propagate to neighboring strands");
+  assert(nodes[4 * 13 + 6].z === 0 && nodes[2 * 13].z === 0,
+    "the top tape and post edges must stay anchored");
+  const ball = new BallState().reset(new Vec3(0, height, 0.13), new Vec3(0, 0, -25));
+  ball.position.z = -0.13;
+  const hit = net.detect(ball);
+  const flatTime = (0.13 - BALL.radius - TABLE.netThickness * 0.5) / 0.26;
+  assert(hit?.surfaceId === "net-mesh" && hit.timeOfImpact < flatTime - 0.02,
+    "a ball must meet the displaced mesh earlier than the old flat collider");
+  const resting = new BallState().reset(new Vec3(), new Vec3(0, 0, -10));
+  const moving = resting.clone();
+  resolveNetContact(resting, new Vec3(0, 0, 1), 0.22);
+  resolveNetContact(moving, new Vec3(0, 0, 1), 0.22, net.velocityAt(0, height));
+  assert(moving.velocity.z > resting.velocity.z,
+    "moving net strands must transfer some of their velocity to the rebound");
+  const world = new PhysicsWorld(new EventBus());
+  world.net.restore(net.snapshot());
+  const restored = new PhysicsWorld(new EventBus());
+  restored.restore(world.snapshot());
+  assert(JSON.stringify(restored.net.snapshot()) === JSON.stringify(world.net.snapshot()),
+    "rollback must preserve both displacement and velocity of the collision net");
+  world.fixedStep(1 / 240, undefined, false);
+  restored.fixedStep(1 / 240, undefined, false);
+  assert(JSON.stringify(restored.net.snapshot()) === JSON.stringify(world.net.snapshot()),
+    "a restored net must propagate its next physics step identically");
+  const forecast = new BallPredictor(world.tuning);
+  const incoming = new BallState().reset(new Vec3(0, height, 0.13), new Vec3(0, 0, -25));
+  const flat = forecast.predict(incoming, 0.02, 1 / 240);
+  const bowed = forecast.predict(incoming, 0.02, 1 / 240, net);
+  assert(Math.abs(flat.points.at(-1)!.position.z - bowed.points.at(-1)!.position.z) > 0.002,
+    "the AI forecast must account for the live net's current deformation");
+  net.reset();
+  assert(net.positions().every((node) => node.z === 0), "net reset must remove prior rally deformation");
 }
 
 function testFlightConvergence(): void {
@@ -288,6 +332,14 @@ function testPlayableSimulation(): void {
   const startY = simulation.world.state.ball.position.y;
   for (let tick = 0; tick < 30; tick += 1) simulation.fixedUpdate(1 / 240, tick);
   assert(simulation.world.state.ball.position.y === startY, "ball must stay put while waiting to serve");
+  assert(simulation.ai.predictionPoints().length === 0 &&
+    simulation.world.state.paddles.away.position.z < -0.8,
+    "the opponent should wait behind its baseline without forecasting an idle ball");
+  const footWorld = new PhysicsWorld(new EventBus());
+  footWorld.state.players.away.velocity.set(0, 0, 10);
+  footWorld.fixedStep(0.2, undefined, false);
+  assert(footWorld.state.players.away.position.z <= -TABLE.length / 2 - 0.13,
+    "an athlete's body must stop behind the far table edge while the racket reaches in");
   simulation.setInput({ ...input, serve: true });
   simulation.setInput(input);
   simulation.fixedUpdate(1 / 240, 30);
@@ -324,6 +376,8 @@ function testModelConstruction(): void {
     putImageData: () => {}, clearRect: () => {}, fillRect: () => {},
     beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {},
     ellipse: () => {}, fillText: () => {},
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+    createRadialGradient: () => ({ addColorStop: () => {} }),
     fillStyle: "", strokeStyle: "", lineWidth: 1, font: "", textAlign: "center"
   };
   Object.defineProperty(globalThis, "document", {
@@ -347,6 +401,11 @@ function testModelConstruction(): void {
     "racket must have a shaped laminated blade");
   const player = new PlayerVisual("home");
   player.sync(world.state.players.home, world.state.paddles.home, 1, 0);
+  world.state.ball.position.set(0.65, 1.13, 0.25);
+  player.sync(world.state.players.home, world.state.paddles.home, 1, 0.05, world.state.ball);
+  const head = player.group.getObjectByName("athlete-head-rig");
+  assert(head && head.children.length > 8 && Math.abs(head.rotation.y) > 0.02,
+    "the athlete's face, hair and eyes must track the live ball as one articulated rig");
   assert(player.group.children.length >= 12 && Boolean(player.group.getObjectByName("athlete-torso")),
     "athlete rig must contain a sculpted torso and articulated limbs");
   const torso = player.group.getObjectByName("athlete-torso") as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
@@ -379,6 +438,9 @@ function testModelConstruction(): void {
     "the night venue must have its own architectural silhouette");
   assert(Boolean(arena.group.getObjectByName("arena-score-display")),
     "the court must show live match scores in the 3D arena");
+  assert(Boolean(arena.group.getObjectByName("venue-display")) &&
+    arena.group.getObjectsByProperty("name", "court-light-pool").length === 9,
+    "venues must include their shared architectural displays and floor lighting");
   arena.updateScore(9, 10, 1, 1);
   const effects = new ContactEffects();
   effects.record(contact("table", "home"));
@@ -401,6 +463,7 @@ export function runGameTests(): void {
   const pointer = mergeInputFrames(keyboard, { swing: 0, serve: false });
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
   testTableAndNet();
+  testWovenNet();
   testContinuousContactAndSpin();
   testFlightConvergence();
   testForecastAndRestoration();

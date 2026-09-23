@@ -6,6 +6,7 @@ import { BallPredictor, type LandingPrediction } from "../physics/Predictor";
 import type { PhysicsTuning } from "../physics/constants";
 import type { BallState, PaddleState, PlayerState } from "../physics/State";
 import { BALL, TABLE } from "../physics/constants";
+import type { NetCollider } from "../physics/NetCollider";
 
 export interface AIAction {
   move: Vec3;
@@ -57,16 +58,24 @@ export class AIBrain {
     };
   }
 
-  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState): AIAction {
+  /** Park behind the baseline without forecasting a ball that is not in play. */
+  prepare(player: PlayerState): AIAction {
+    this.prediction = null;
+    this.reactionTimer = 0;
+    this.lastAction = this.recover(player);
+    return this.lastAction;
+  }
+
+  update(dt: number, ball: BallState, player: PlayerState, paddle: PaddleState, net?: NetCollider): AIAction {
     this.reactionTimer -= dt;
     if (this.reactionTimer > 0) return this.lastAction;
     this.reactionTimer = this.profile.reactionSeconds * this.random.range(0.82, 1.18);
     const movingTowardAI = this.side === "home" ? ball.velocity.z > 0 : ball.velocity.z < 0;
     if (!movingTowardAI && ball.position.y < 0.9) {
-      this.lastAction = this.recover(player, paddle, dt);
+      this.lastAction = this.recover(player);
       return this.lastAction;
     }
-    this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
+    this.prediction = this.predictor.predict(ball, 1.8, 1 / 120, net);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
     const sign = this.side === "away" ? -1 : 1;
     // Forecasts start at the current ball state. If the ball has already
@@ -92,9 +101,12 @@ export class AIBrain {
       clamp(predicted.y + this.random.signed() * this.profile.placementError * 0.4,
         TABLE.top + BALL.radius + 0.045, 1.7),
       clamp(predicted.z + sign * 0.035,
-        this.side === "away" ? -1.72 : 0.34, this.side === "away" ? -0.34 : 1.72)
+        this.side === "away" ? -1.72 : 0.82, this.side === "away" ? -0.82 : 1.72)
     );
-    const move = this.target.clone().sub(player.position).setY(0).clampMagnitude(1);
+    // Keep the athlete's body behind the table while the racket reaches in.
+    const playerTarget = new Vec3(this.target.x, 0,
+      sign * clamp(Math.abs(this.target.z) + 0.48, TABLE.length / 2 + 0.13, 2.05));
+    const move = playerTarget.sub(player.position).setY(0).clampMagnitude(1);
     const reachable = this.target.distanceTo(paddle.position) < 1.15 + confidence * 0.35;
     const swing = reachable && Boolean(intercept) && movingTowardAI && ball.position.y > 0.5
       ? clamp(0.25 + this.profile.aggression * 0.8 + ball.speed() / 70, 0, 1)
@@ -120,10 +132,10 @@ export class AIBrain {
     return this.lastAction;
   }
 
-  private recover(player: PlayerState, paddle: PaddleState, dt: number): AIAction {
-    const target = new Vec3(this.homeBias.x, 1.0, this.side === "home" ? 1.15 : -1.15);
+  private recover(player: PlayerState): AIAction {
+    const target = new Vec3(this.homeBias.x, 0, this.side === "home" ? 1.65 : -1.65);
     const move = target.clone().sub(player.position).setY(0).clampMagnitude(1);
-    const paddleTarget = target.clone().setY(1.0);
+    const paddleTarget = new Vec3(target.x, 1.0, this.side === "home" ? 1.05 : -1.05);
     const normal = new Vec3(0, 0, this.side === "home" ? -1 : 1);
     this.lastAction = {
       move,

@@ -179,7 +179,11 @@ export class PhysicsWorld {
       ball.lastHitTick = this.state.tick;
     } else if (hit.kind === "net") {
       const before = ball.velocity.clone();
-      resolveNetContact(ball, normal, contact.surfaceId.startsWith("net-post") ? 0.55 : this.tuning.netRestitution);
+      const surfaceVelocity = contact.surfaceId === "net-mesh"
+        ? this.net.velocityAt(contact.point.x, contact.point.y) : new Vec3();
+      resolveNetContact(ball, normal,
+        contact.surfaceId.startsWith("net-post") ? 0.55 : this.tuning.netRestitution,
+        surfaceVelocity);
       if (!contact.surfaceId.startsWith("net-post")) {
         this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
       }
@@ -210,14 +214,14 @@ export class PhysicsWorld {
   }
 
   snapshot() {
-    return this.state.snapshot();
+    return { ...this.state.snapshot(), net: this.net.snapshot() };
   }
 
   restore(snapshot: ReturnType<WorldState["snapshot"]>): void {
     this.state.restore(snapshot);
     this.contacts.length = 0;
     this.lastContactTick.clear();
-    this.net.reset();
+    this.net.restore(snapshot.net);
   }
 
   recentContacts(): CollisionContact[] {
