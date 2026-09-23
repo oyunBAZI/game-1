@@ -12,6 +12,7 @@ import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
 import { resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
 import { BallState } from "../physics/State";
+import { BallPredictor } from "../physics/Predictor";
 import { PlayerVisual } from "../render/Player";
 import { PaddleVisual } from "../render/Paddle";
 import { TableVisual } from "../render/Table";
@@ -75,6 +76,10 @@ function testTableAndNet(): void {
   assert(skim.contacts.some((item) => item.surfaceId === "net-cord"),
     "a grazing ball must hit the cord rather than the net mesh");
   assert(ball.velocity.y > 0, "the cord should deflect a grazing ball upward");
+  ball.reset(new Vec3(0, TABLE.top + TABLE.netHeight + 0.07, 0), new Vec3(0, -15, 0));
+  const vertical = world.fixedStep(1 / 120);
+  assert(vertical.contacts.some((item) => item.surfaceId === "net-cord"),
+    "a vertical drop must still hit the top tape");
   ball.reset(new Vec3(0, 1.1, 0), new Vec3(0, 0, -8));
   ball.angularVelocity.set(220, 0, 0);
   const lift = new Aerodynamics(world.tuning).forces(ball).magnus.length();
@@ -84,6 +89,16 @@ function testTableAndNet(): void {
 
 function testContinuousContactAndSpin(): void {
   const world = new PhysicsWorld(new EventBus());
+  const held = world.state.paddles.home;
+  world.paddles.placeForInput(held, held.position.clone(), new Vec3(0.8, 0, -0.6), 1 / 240);
+  const turn = Math.acos(Math.max(-1, Math.min(1, held.normal.dot(new Vec3(0, 0, -1)))));
+  assert(turn > 0 && turn <= 24 / 240 + 1e-6,
+    "racket aim must rotate at a bounded angular rate rather than snapping instantly");
+  const beforeReverse = held.normal.clone();
+  world.paddles.placeForInput(held, held.position.clone(), beforeReverse.clone().negate(), 1 / 240);
+  const reverseTurn = held.normal.angleTo(beforeReverse);
+  assert(reverseTurn > 0 && reverseTurn <= 24 / 240 + 1e-6,
+    "opposite aim directions must keep rotating without a singularity");
   const ball = world.state.ball;
   ball.reset(new Vec3(0, TABLE.top + BALL.radius + 0.08, 0.07), new Vec3(0, -20, -30));
   const step = world.fixedStep(1 / 120);
@@ -142,6 +157,30 @@ function testContinuousContactAndSpin(): void {
   resolveTableBounce(topspin, new Vec3(0, 1, 0), table);
   assert(topspin.velocity.z < backspin.velocity.z,
     "topspin should kick forward more than backspin after the table bounce");
+}
+
+function testForecastAndRestoration(): void {
+  const world = new PhysicsWorld(new EventBus());
+  const ball = world.state.ball;
+  // This trajectory crosses the home racket's idle position before the table.
+  // The prediction is for free flight, so the stationary racket cannot reflect it.
+  ball.reset(new Vec3(0, 1.12, 0.45), new Vec3(0, 0, 3.5));
+  const predictor = new BallPredictor(world.tuning);
+  const forecast = predictor.predict(ball, 0.32, 1 / 240);
+  assert(forecast.points.some((point) => point.position.z > 1.1 && point.velocity.z > 0),
+    "trajectory prediction must disable both rackets after resetting its world");
+  const again = predictor.predict(ball, 0.32, 1 / 240);
+  assert(Math.abs(forecast.points.at(-1)!.position.z - again.points.at(-1)!.position.z) < 1e-9,
+    "repeat forecasts must start from the same independent physics state");
+
+  ball.lastContactSide = "away";
+  ball.lastHitTick = 17;
+  ball.contactCount = 4;
+  const restored = new PhysicsWorld(new EventBus());
+  restored.restore(world.snapshot());
+  assert(restored.state.ball.lastContactSide === "away" && restored.state.ball.lastHitTick === 17 &&
+    restored.state.ball.contactCount === 4,
+    "rollback must preserve the ball's contact history used by rally logic");
 }
 
 function testRallyScoring(): void {
@@ -235,6 +274,8 @@ function testPlayableSimulation(): void {
   simulation.restart();
   assert(simulation.match.phase() === "serve" && simulation.match.scoreboard.score("home") === 0,
     "session restart must reset both match rules and ball state");
+  assert(simulation.ai.predictionPoints().length === 0,
+    "a new session must discard the previous rally's AI prediction");
   assert(!simulation.match.serve.isActive() && !simulation.match.rally.state.active,
     "restarting during a rally must discard the previous serve and rally");
   contacts.length = 0;
@@ -266,6 +307,8 @@ function testModelConstruction(): void {
   const firstNetVertex = net.geometry.getAttribute("position");
   assert(Math.abs(firstNetVertex.getX(0)) > TABLE.width * 0.4,
     "net mesh must span the table width, not face across the table");
+  assert(firstNetVertex.getY(0) > firstNetVertex.getY(firstNetVertex.count - 1),
+    "the visual net's top row must follow the simulation's top row");
   const racket = new PaddleVisual("home", materials);
   racket.sync(world.state.paddles.home, 1);
   assert(racket.group.children.some((child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.ExtrudeGeometry),
@@ -274,6 +317,9 @@ function testModelConstruction(): void {
   player.sync(world.state.players.home, world.state.paddles.home, 1, 0);
   assert(player.group.children.length >= 12 && Boolean(player.group.getObjectByName("athlete-torso")),
     "athlete rig must contain a sculpted torso and articulated limbs");
+  const torso = player.group.getObjectByName("athlete-torso") as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+  assert(torso.material.map instanceof THREE.CanvasTexture,
+    "the athlete's jersey must use its own woven uniform texture");
   const arena = new ArenaVisual(materials);
   let instancedSeats = false;
   arena.group.traverse((child) => { instancedSeats ||= child instanceof THREE.InstancedMesh; });
@@ -282,7 +328,17 @@ function testModelConstruction(): void {
   assert(Boolean(arena.group.getObjectByName("broadcast-camera")),
     "arena must include broadcast production detail");
   arena.setProfile(getArena("training-lab"));
+  const gallery = arena.group.getObjectByName("arena-side-stands");
+  const floor = arena.group.getObjectByName("arena-floor") as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+  assert(gallery?.visible === false && floor.material.map instanceof THREE.CanvasTexture,
+    "training must switch to its own textured court without a competition gallery");
+  const trainingFloor = floor.material.map;
+  arena.setProfile(getArena("club-hall"));
+  assert(floor.material.map !== trainingFloor && gallery?.visible === false,
+    "club hall must use a separate wood finish");
   arena.setProfile(getArena("national-arena"));
+  assert(arena.group.getObjectByName("arena-side-stands")?.visible === true,
+    "the national arena must enable its instanced side galleries");
   assert(Boolean(arena.group.getObjectByName("arena-score-display")),
     "the court must show live match scores in the 3D arena");
   arena.updateScore(9, 10, 1, 1);
@@ -301,6 +357,7 @@ export function runGameTests(): void {
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
   testTableAndNet();
   testContinuousContactAndSpin();
+  testForecastAndRestoration();
   testRallyScoring();
   testPlayableSimulation();
   testModelConstruction();

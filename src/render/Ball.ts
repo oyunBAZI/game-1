@@ -13,7 +13,8 @@ export class BallVisual {
   private readonly trailPositions: THREE.Vector3[] = [];
   private readonly ballQuaternion = new Quat();
   private readonly print: THREE.CanvasTexture;
-  private readonly tableShadow: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  private readonly shadowTexture: THREE.CanvasTexture;
+  private readonly tableShadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 
   constructor(materials: MaterialPalette) {
     const geometry = new THREE.SphereGeometry(BALL.radius, 32, 24);
@@ -37,9 +38,14 @@ export class BallVisual {
     this.mesh.receiveShadow = true;
     this.group.name = "ball-visual";
     this.group.add(this.mesh);
+    this.shadowTexture = this.makeShadowTexture();
     this.tableShadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.075, 32),
-      new THREE.MeshBasicMaterial({ color: 0x071723, transparent: true, opacity: 0.2, depthWrite: false })
+      new THREE.PlaneGeometry(0.19, 0.19),
+      new THREE.MeshBasicMaterial({
+        map: this.shadowTexture, transparent: true, opacity: 0.64,
+        depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+        toneMapped: false
+      })
     );
     this.tableShadow.rotation.x = -Math.PI / 2;
     this.tableShadow.renderOrder = 2;
@@ -61,9 +67,9 @@ export class BallVisual {
     this.tableShadow.visible = Math.abs(interpolated.x) < TABLE.width / 2 - 0.02 &&
       Math.abs(interpolated.z) < TABLE.length / 2 - 0.02 && altitude < 1.4;
     this.tableShadow.position.set(0, TABLE.top + 0.003 - interpolated.y, 0);
-    const shadowSize = 0.65 + altitude * 4;
+    const shadowSize = 0.53 + altitude * 2.3;
     this.tableShadow.scale.set(shadowSize, shadowSize, 1);
-    this.tableShadow.material.opacity = 0.32 * Math.exp(-altitude * 2.2);
+    this.tableShadow.material.opacity = 0.72 * Math.exp(-altitude * 2.8);
     const spinAxis = state.angularVelocity.clone();
     const angle = spinAxis.length() * Math.min(dt, 1 / 30);
     if (angle > 0.0001) {
@@ -92,9 +98,32 @@ export class BallVisual {
     }
   }
 
+  private makeShadowTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const image = context.createImageData(128, 128);
+      for (let y = 0; y < 128; y += 1) {
+        for (let x = 0; x < 128; x += 1) {
+          const radius = Math.hypot((x - 63.5) / 63.5, (y - 63.5) / 63.5);
+          const opacity = Math.pow(Math.max(0, 1 - radius), 2.3);
+          const index = (y * 128 + x) * 4;
+          image.data[index] = 3;
+          image.data[index + 1] = 13;
+          image.data[index + 2] = 19;
+          image.data[index + 3] = Math.round(255 * opacity);
+        }
+      }
+      context.putImageData(image, 0, 0);
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
   dispose(): void {
     this.mesh.geometry.dispose();
     this.print.dispose();
+    this.shadowTexture.dispose();
     this.trail.geometry.dispose();
     (this.trail.material as THREE.Material).dispose();
     this.tableShadow.geometry.dispose();

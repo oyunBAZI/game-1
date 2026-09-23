@@ -72,6 +72,9 @@ export class BallState {
       previousPosition: this.previousPosition.toJSON(),
       grounded: this.grounded,
       lastContact: this.lastContact,
+      lastContactSide: this.lastContactSide,
+      lastHitTick: this.lastHitTick,
+      contactCount: this.contactCount,
       age: this.age
     };
   }
@@ -83,6 +86,9 @@ export class BallState {
     this.previousPosition.copy(snapshot.previousPosition);
     this.grounded = snapshot.grounded;
     this.lastContact = snapshot.lastContact;
+    this.lastContactSide = snapshot.lastContactSide ?? null;
+    this.lastHitTick = snapshot.lastHitTick ?? -1;
+    this.contactCount = snapshot.contactCount ?? 0;
     this.age = snapshot.age;
   }
 
@@ -218,6 +224,7 @@ export class PlayerState {
 
   restore(snapshot: PlayerSnapshot): void {
     this.position.copy(snapshot.position);
+    this.previousPosition.copy(snapshot.position);
     this.velocity.copy(snapshot.velocity);
     this.energy = snapshot.energy;
     this.ready = snapshot.ready;

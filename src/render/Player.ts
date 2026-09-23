@@ -25,6 +25,7 @@ export class PlayerVisual {
   private readonly fabric: THREE.CanvasTexture;
   private readonly skinGrain: THREE.CanvasTexture;
   private readonly shirtMark: THREE.CanvasTexture;
+  private readonly jerseyPrint: THREE.CanvasTexture;
   private readonly forward: number;
 
   constructor(side: Side) {
@@ -33,9 +34,10 @@ export class PlayerVisual {
     this.fabric = createFabricTexture();
     this.skinGrain = createSkinTexture();
     this.shirtMark = createShirtMark(side);
+    this.jerseyPrint = createJerseyTexture(side);
     const jersey = new THREE.MeshPhysicalMaterial({
-      color: side === "home" ? 0x136e7e : 0xb03b37,
-      roughness: 0.86, sheen: 0.36, sheenRoughness: 0.84,
+      color: 0xffffff, map: this.jerseyPrint,
+      roughness: 0.84, sheen: 0.48, sheenRoughness: 0.9,
       bumpMap: this.fabric, bumpScale: 0.001
     });
     const stripe = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xe1c78b : 0xf1e3cb, roughness: 0.72 });
@@ -88,14 +90,18 @@ export class PlayerVisual {
     for (const z of [-0.089, 0.089]) {
       add(new THREE.BoxGeometry(0.255, 0.007, 0.01), stripe, 0, 0.848, z);
     }
-    const face = add(new THREE.SphereGeometry(0.105, 20, 16), skin, 0, 1.51, 0);
+    const shirtHem = add(new THREE.TorusGeometry(0.122, 0.006, 5, 28), stripe, 0, 0.847, 0);
+    shirtHem.rotation.x = Math.PI / 2;
+    shirtHem.scale.set(1.13, 0.82, 1);
+    const face = add(createHeadGeometry(), skin, 0, 1.51, 0);
     face.scale.set(0.93, 1.06, 0.96);
     const jaw = add(new THREE.SphereGeometry(0.081, 18, 12), skin, 0, 1.451, this.forward * 0.017);
-    jaw.scale.set(0.95, 0.67, 0.94);
+    jaw.scale.set(0.85, 0.42, 0.83);
     const cap = add(new THREE.SphereGeometry(0.109, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.48), hair, 0, 1.535, 0);
     cap.scale.z = 1.04;
     for (const [x, z, rotation] of [[-0.052, 0.048, 0.36], [0, 0.084, 0], [0.055, 0.05, -0.33]] as const) {
-      const lock = add(new THREE.ConeGeometry(0.024, 0.085, 7), hair, x, 1.61, this.forward * z);
+      const lock = add(new THREE.SphereGeometry(0.033, 12, 8), hair, x, 1.61, this.forward * z);
+      lock.scale.set(0.87, 1.35, 0.68);
       lock.rotation.z = rotation;
     }
     for (const x of [-0.101, 0.101]) {
@@ -147,6 +153,13 @@ export class PlayerVisual {
         stitch.position.set(0, 0.103 - lace * 0.012, this.forward * (0.012 + lace * 0.027));
         foot.add(stitch);
       }
+      const toe = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 8), sole);
+      toe.position.set(0, -0.026, this.forward * 0.055);
+      toe.scale.set(0.82, 0.44, 0.61);
+      foot.add(toe);
+      const heel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.027, 0.04), stripe);
+      heel.position.set(0, -0.048, -this.forward * 0.062);
+      foot.add(heel);
       const knee = add(new THREE.SphereGeometry(0.064, 12, 10), skin, x, 0.38, 0);
       const sockBand = add(new THREE.CylinderGeometry(0.053, 0.049, 0.10, 10), sock, x, 0.14, 0);
       const outsole = add(new THREE.SphereGeometry(0.106, 12, 8), sole, x, 0.025, this.forward * 0.1);
@@ -176,7 +189,8 @@ export class PlayerVisual {
     const wrist = hand.clone().lerp(elbow, 0.13);
     this.wristband.position.copy(wrist);
     this.wristband.quaternion.copy(this.forearm.quaternion);
-    this.torso.rotation.z = Math.max(-0.12, Math.min(0.12, -hand.x * 0.09));
+    const lateral = Math.max(-1, Math.min(1, player.velocity.x / Math.max(1, player.maxSpeed)));
+    this.torso.rotation.z = Math.max(-0.16, Math.min(0.16, -hand.x * 0.09 - lateral * 0.065));
     this.torso.rotation.x = Math.max(-0.08, Math.min(0.08, player.velocity.z * this.forward * 0.018));
     this.elbows[0].position.copy(elbow);
     this.hand.position.copy(hand);
@@ -194,8 +208,8 @@ export class PlayerVisual {
       const x = index ? 0.088 : -0.088;
       const stride = sway * (index ? -1 : 1);
       const hip = new THREE.Vector3(x, 0.69, 0);
-      const knee = new THREE.Vector3(x * 1.25, 0.38, this.forward * (0.06 + stride));
-      const ankle = new THREE.Vector3(x * 1.5, 0.08, this.forward * (0.08 - stride));
+      const knee = new THREE.Vector3(x * 1.25 + lateral * 0.045, 0.38, this.forward * (0.06 + stride));
+      const ankle = new THREE.Vector3(x * 1.5 + lateral * 0.09, 0.08, this.forward * (0.08 - stride));
       this.placeSegment(this.thighs[index], hip, knee);
       this.placeSegment(this.calves[index], knee, ankle);
       this.knees[index].position.copy(knee);
@@ -235,7 +249,52 @@ export class PlayerVisual {
     this.fabric.dispose();
     this.skinGrain.dispose();
     this.shirtMark.dispose();
+    this.jerseyPrint.dispose();
   }
+}
+
+/** Tapered cheeks and jaw read more naturally at the broadcast camera distance. */
+function createHeadGeometry(): THREE.BufferGeometry {
+  const head = new THREE.SphereGeometry(0.105, 28, 20);
+  const positions = head.getAttribute("position");
+  for (let index = 0; index < positions.count; index += 1) {
+    const y = positions.getY(index) / 0.105;
+    const x = positions.getX(index);
+    const z = positions.getZ(index);
+    const jaw = y < -0.12 ? 1 - (Math.abs(y) - 0.12) * 0.2 : 1;
+    positions.setXYZ(index, x * jaw, positions.getY(index), z * (0.93 + 0.07 * (1 - Math.abs(y))));
+  }
+  head.computeVertexNormals();
+  return head;
+}
+
+function createJerseyTexture(side: Side): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const image = context.createImageData(size, size);
+    const base = side === "home" ? [24, 109, 126] : [151, 48, 48];
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const weave = ((x * 31 + y * 17 + x * y * 7) % 11) - 5;
+        const panel = Math.abs(x - 128) > 95 ? -22 : Math.abs(x - 128) > 69 ? 8 : 0;
+        const shoulder = y < 43 ? 13 : 0;
+        const index = (y * size + x) * 4;
+        for (let channel = 0; channel < 3; channel += 1) {
+          image.data[index + channel] = base[channel] + weave + panel + shoulder;
+        }
+        image.data[index + 3] = 255;
+      }
+    }
+    context.putImageData(image, 0, 0);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 /** Elliptical loft gives the shirt shoulders, ribcage and waist distinct mass. */

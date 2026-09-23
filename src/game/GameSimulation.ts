@@ -68,6 +68,7 @@ export class GameSimulation implements FixedStepParticipant {
     this.running = true;
     this.pendingServe = false;
     this.world.reset();
+    this.ai.reset();
     this.match.start("home");
   }
 

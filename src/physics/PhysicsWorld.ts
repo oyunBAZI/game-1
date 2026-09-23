@@ -213,6 +213,9 @@ export class PhysicsWorld {
 
   restore(snapshot: ReturnType<WorldState["snapshot"]>): void {
     this.state.restore(snapshot);
+    this.contacts.length = 0;
+    this.lastContactTick.clear();
+    this.net.reset();
   }
 
   recentContacts(): CollisionContact[] {

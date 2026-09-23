@@ -216,9 +216,18 @@ export class TableVisual {
 
   updateNet(nodes: Array<{ x: number; y: number; z: number }>): void {
     const positions = this.netSurface.geometry.getAttribute("position");
-    for (let index = 0; index < Math.min(nodes.length, positions.count); index += 1) {
-      const node = nodes[index];
-      positions.setXYZ(index, node.x, node.y - (TABLE.top + TABLE.netHeight / 2), node.z);
+    const columns = 13;
+    const rows = 5;
+    // PlaneGeometry orders vertices from the top row down. NetCollider stores
+    // its spring nodes from the bottom row up; direct indexing turns impacts
+    // upside down and makes the tape deform at the wrong height.
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const index = row * columns + column;
+        const node = nodes[(rows - 1 - row) * columns + column];
+        if (!node || index >= positions.count) continue;
+        positions.setXYZ(index, node.x, node.y - (TABLE.top + TABLE.netHeight / 2), node.z);
+      }
     }
     positions.needsUpdate = true;
     this.netSurface.geometry.computeVertexNormals();

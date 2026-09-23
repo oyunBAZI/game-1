@@ -18,6 +18,7 @@ export interface AIAction {
 
 export class AIBrain {
   private readonly random: Random;
+  private readonly initialSeed: number;
   private readonly predictor: BallPredictor;
   private prediction: LandingPrediction | null = null;
   private reactionTimer = 0;
@@ -31,12 +32,25 @@ export class AIBrain {
     tuning: PhysicsTuning,
     seed = 911
   ) {
-    this.random = new Random(seed + (side === "home" ? 1 : 2));
+    this.initialSeed = seed + (side === "home" ? 1 : 2);
+    this.random = new Random(this.initialSeed);
     this.predictor = new BallPredictor(tuning);
-    this.lastAction = {
+    this.lastAction = this.neutralAction();
+  }
+
+  reset(): void {
+    this.random.setSeed(this.initialSeed);
+    this.prediction = null;
+    this.reactionTimer = 0;
+    this.target.set(0, 0, 0);
+    this.lastAction = this.neutralAction();
+  }
+
+  private neutralAction(): AIAction {
+    return {
       move: new Vec3(),
-      paddleTarget: new Vec3(0, 1, side === "home" ? 0.65 : -0.65),
-      paddleNormal: new Vec3(0, 0, side === "home" ? -1 : 1),
+      paddleTarget: new Vec3(0, 1, this.side === "home" ? 0.65 : -0.65),
+      paddleNormal: new Vec3(0, 0, this.side === "home" ? -1 : 1),
       swing: 0,
       spin: new Vec3(),
       confidence: 0

@@ -87,6 +87,7 @@ export class RenderBridge {
   }
 
   dispose(): void {
+    this.arena.dispose();
     this.renderer.dispose();
   }
 }

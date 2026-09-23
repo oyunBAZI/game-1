@@ -71,6 +71,9 @@ export interface BallSnapshot {
   previousPosition: Vec3Like;
   grounded: boolean;
   lastContact: ContactKind | null;
+  lastContactSide?: Side | null;
+  lastHitTick?: number;
+  contactCount?: number;
   age: number;
 }
 

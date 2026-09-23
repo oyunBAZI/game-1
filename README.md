@@ -13,6 +13,12 @@ The scene includes articulated athletes with sculpted torsos and procedural spor
 - Materials and venue details are generated locally: wood veneer, rubber grain, table paint, floor vinyl, fabric, skin grain, tournament signs, benches, training cart, lighting rigs and a broadcast camera. There are no runtime downloads for scene assets.
 - These are detailed procedural assets, not photogrammetry or a production character pipeline. The visual target remains a long-term goal; this build does not claim native AAA fidelity.
 
+### Latest improvements
+
+- The National Arena now has instanced spectator galleries along both sidelines. Each venue has its own generated floor finish and backdrop: training lab panels, club wood slats, tournament seating, or a night-court light portal. Athlete jerseys have distinct woven prints, sculpted head silhouettes, shoe details and lateral footwork. The ball casts a soft, height-dependent contact shadow.
+- Racket aim rotates at a bounded angular speed. A vertical drop onto the net tape now receives a cord collision. Trajectory forecasts disable both rackets after every reset and report the first actual tabletop impact; the AI no longer aims from ghost racket rebounds. Rollback snapshots retain the ball's last hitter and contact history. The rendered net now maps its upper row to the physical tape rather than to the floor edge.
+- All four development gates (`npm run typecheck`, `npm run test:simulation`, `npm run validate`, `npm run build`) exercise this pass. There are no external 3D or texture requests. The characters and venues remain procedural game assets, not scanned models or an authored AAA animation pipeline.
+
 > A high-fidelity, physics-driven 3D table tennis simulation built for the browser with **Three.js**, designed to push WebGL graphics, ball physics, animation, audio, AI, and player control as far as realistically possible.
 
 [Three.js](https://img.shields.io/badge/Three.js-WebGL-black)

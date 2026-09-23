@@ -30,8 +30,9 @@ export class NetCollider {
   }
 
   detect(ball: BallState): CollisionContact | null {
-    if (Math.abs(ball.velocity.z) < 1e-8) return null;
     const cord = this.detectCord(ball);
+    // A ball can fall vertically onto the tape even without crossing the net.
+    if (Math.abs(ball.velocity.z) < 1e-8) return cord;
     const sign = ball.velocity.z > 0 ? -1 : 1;
     const contactZ = sign * (TABLE.netThickness * 0.5 + ball.radius);
     const travel = ball.position.z - ball.previousPosition.z;

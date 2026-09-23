@@ -80,7 +80,24 @@ export class PaddleCollider {
     const maxDistance = maxSpeed * dt;
     if (delta.length() > maxDistance) delta.clampLength(0, maxDistance);
     paddle.position.add(delta);
-    paddle.normal.copy(targetNormal).normalize();
+    const desired = Vec3.from(targetNormal).normalize();
+    if (desired.isZero()) desired.copy(paddle.normal);
+    const angle = Math.acos(clamp(paddle.normal.dot(desired), -1, 1));
+    const maxTurn = 24 * dt;
+    if (angle > maxTurn && angle < Math.PI - 1e-4) {
+      const fraction = maxTurn / angle;
+      const divisor = Math.sin(angle);
+      paddle.normal.multiplyScalar(Math.sin((1 - fraction) * angle) / divisor)
+        .addScaled(desired, Math.sin(fraction * angle) / divisor).normalize();
+    } else if (angle > maxTurn) {
+      // Near 180 degrees, slerp's denominator vanishes. Choose a stable
+      // perpendicular axis so even a reversal progresses at the same rate.
+      const previous = paddle.normal.clone();
+      const axis = new Vec3(0, 1, 0).cross(previous).normalize();
+      if (axis.isZero()) axis.set(1, 0, 0).cross(previous).normalize();
+      paddle.normal.multiplyScalar(Math.cos(maxTurn))
+        .addScaled(new Vec3().crossVectors(axis, previous), Math.sin(maxTurn)).normalize();
+    } else paddle.normal.copy(desired);
     paddle.position.x = clamp(paddle.position.x, -0.95, 0.95);
     paddle.position.y = clamp(paddle.position.y, 0.42, 1.8);
     const sideSign = paddle.side === "home" ? 1 : -1;

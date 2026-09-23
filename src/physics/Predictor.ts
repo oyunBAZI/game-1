@@ -33,6 +33,10 @@ export class BallPredictor {
 
   predict(ball: BallState, duration = 2.5, step = 1 / 120): LandingPrediction {
     this.world.reset();
+    // reset() restores the live game's default active rackets. A forecast must
+    // never bounce off an idle player's racket at its reset position.
+    this.world.state.paddles.home.active = false;
+    this.world.state.paddles.away.active = false;
     this.world.state.ball = ball.clone();
     const sim = this.world.state.ball;
     const points: PredictionPoint[] = [];
@@ -42,8 +46,10 @@ export class BallPredictor {
     points.push({ time: 0, position: sim.position.clone(), velocity: sim.velocity.clone(), bounced: false, crossedNet });
     for (let time = 0; time < duration; time += step) {
       const beforeZ = sim.position.z;
-      const result = this.world.fixedStep(Math.min(step, duration - time));
-      const bounced = result.contacts.some((contact) => contact.kind === "table" || contact.kind === "edge");
+      const stepDuration = Math.min(step, duration - time);
+      const result = this.world.fixedStep(stepDuration);
+      const bounced = result.contacts.some((contact) =>
+        (contact.kind === "table" || contact.kind === "edge") && contact.surfaceId !== "table-side");
       if (beforeZ * sim.position.z <= 0 && sim.position.y > TABLE.top + TABLE.netHeight) crossedNet = true;
       const point = {
         time: Math.min(duration, time + step),
@@ -53,12 +59,22 @@ export class BallPredictor {
         crossedNet
       };
       points.push(point);
-      if (bounced) {
+      for (const contact of result.contacts) {
+        if ((contact.kind !== "table" && contact.kind !== "edge") || contact.surfaceId === "table-side") continue;
         bounces += 1;
-        landing = point;
+        // Use the actual first playing-surface impact, rather than the ball's
+        // position after a whole step (or the third bounce of its forecast).
+        if (!landing) {
+          landing = {
+            ...point,
+            time: time + contact.timeOfImpact * stepDuration,
+            position: Vec3.from(contact.point)
+          };
+        }
         if (bounces >= 3) break;
       }
-      if (result.ballOut) break;
+      if (bounces >= 3) break;
+      if (result.ballOut || result.contacts.some((contact) => contact.surfaceId === "table-side")) break;
     }
     const final = landing ?? points[points.length - 1];
     const valid = Boolean(landing && Math.abs(landing.position.x) <= TABLE.width / 2 && Math.abs(landing.position.z) <= TABLE.length / 2);

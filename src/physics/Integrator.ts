@@ -2,6 +2,7 @@ import { clamp } from "../core/MathUtils";
 import { Vec3 } from "../core/Vec3";
 import type { PhysicsTuning } from "./constants";
 import { Aerodynamics } from "./Aerodynamics";
+import { BALL } from "./constants";
 import type { BallState, WorldState } from "./State";
 
 export class BallIntegrator {
@@ -19,7 +20,7 @@ export class BallIntegrator {
     ball.velocity.addScaled(this.acceleration, dt);
     ball.velocity.clampMagnitude(this.tuning.maxBallSpeed);
     ball.position.addScaled(ball.velocity, dt);
-    this.angularAcceleration.copy(ball.torque).divideScalar(0.00000072);
+    this.angularAcceleration.copy(ball.torque).divideScalar(BALL.inertia);
     ball.angularVelocity.addScaled(this.angularAcceleration, dt);
     ball.angularVelocity.clampMagnitude(this.tuning.maxSpinRate);
     // Forces belong to this segment only. Continuous collision can integrate
@@ -44,6 +45,6 @@ export class BallIntegrator {
   }
 
   estimateEnergy(ball: BallState): number {
-    return 0.5 * ball.mass * ball.velocity.lengthSq() + 0.5 * 0.00000036 * ball.angularVelocity.lengthSq();
+    return 0.5 * ball.mass * ball.velocity.lengthSq() + 0.5 * BALL.inertia * ball.angularVelocity.lengthSq();
   }
 }

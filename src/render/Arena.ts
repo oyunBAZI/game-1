@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { TABLE } from "../physics/constants";
 import type { MaterialPalette } from "./ProceduralMaterials";
 import type { ArenaProfile } from "../content/ArenaCatalog";
+import { createArenaSurface, type FloorFinish } from "./ArenaSurfaces";
 
 export class ArenaVisual {
   readonly group = new THREE.Group();
@@ -14,6 +15,8 @@ export class ArenaVisual {
   private readonly wallMaterial: THREE.MeshStandardMaterial;
   private readonly ledMaterial = new THREE.MeshStandardMaterial({ color: 0x37a7a9, emissive: 0x136368, emissiveIntensity: 0.7 });
   private readonly crowd = new THREE.Group();
+  private readonly sideStands = new THREE.Group();
+  private readonly floorFinishes = new Map<FloorFinish, [THREE.CanvasTexture, THREE.CanvasTexture]>();
   private readonly courtGraphics = new THREE.Group();
   private readonly trainingProps = new THREE.Group();
   private readonly clubProps = new THREE.Group();
@@ -36,7 +39,7 @@ export class ArenaVisual {
     this.addStands(materials);
     this.addProductionDetails(materials);
     this.addVenueProps(materials);
-    this.group.add(this.crowd, this.courtGraphics, this.trainingProps, this.clubProps, this.nightProps);
+    this.group.add(this.crowd, this.sideStands, this.courtGraphics, this.trainingProps, this.clubProps, this.nightProps);
     this.scoreCanvas = document.createElement("canvas");
     this.scoreCanvas.width = 1024;
     this.scoreCanvas.height = 256;
@@ -54,10 +57,12 @@ export class ArenaVisual {
 
   private addFloor(materials: MaterialPalette): [THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>, THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>] {
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), materials.floor.clone());
+    floor.name = "arena-floor";
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
     const playingFloor = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 8.6), materials.floor.clone());
+    playingFloor.name = "court-floor";
     playingFloor.rotation.x = -Math.PI / 2;
     playingFloor.position.y = 0.003;
     playingFloor.receiveShadow = true;
@@ -286,6 +291,71 @@ export class ArenaVisual {
     );
     glow.position.set(0, 0.86, -5.58);
     this.crowd.add(glow);
+    this.addSideStands(materials);
+  }
+
+  /** A gallery on each sideline gives the broadcast view depth and a proper
+   * competition-hall silhouette. Seats and spectators share three instanced
+   * draw calls instead of a mesh per person. */
+  private addSideStands(materials: MaterialPalette): void {
+    this.sideStands.name = "arena-side-stands";
+    const rows = 4;
+    const columns = 23;
+    const count = rows * columns * 2;
+    const seatGeometry = new THREE.BoxGeometry(0.26, 0.17, 0.24);
+    const seats = new THREE.InstancedMesh(seatGeometry,
+      new THREE.MeshStandardMaterial({ color: 0x6a8386, roughness: 0.82 }), count);
+    const torsos = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.081, 0.12, 3, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), count);
+    const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.061, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xbda58d, roughness: 0.91 }), count);
+    const dummy = new THREE.Object3D();
+    const fabric = [0x20333d, 0x738080, 0x916b61, 0x475c68, 0x38585b];
+    const skin = [0xd3ab85, 0x93684d, 0xe2c19c, 0x64473e];
+    let index = 0;
+    for (const sign of [-1, 1]) {
+      for (let row = 0; row < rows; row += 1) {
+        const x = sign * (4.18 + row * 0.47);
+        const height = 0.19 + row * 0.24;
+        const tier = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.23, 8), materials.tableEdge);
+        tier.position.set(x, height, -0.1);
+        tier.receiveShadow = true;
+        this.sideStands.add(tier);
+        for (let column = 0; column < columns; column += 1) {
+          const z = -3.68 + column * 0.33;
+          const vacant = (column * 19 + row * 13 + sign * 7) % 8 === 0 || column === 11;
+          dummy.position.set(x, height + 0.18, z);
+          dummy.rotation.set(0, sign * Math.PI / 2, 0);
+          dummy.scale.setScalar(1);
+          dummy.updateMatrix();
+          seats.setMatrixAt(index, dummy.matrix);
+          seats.setColorAt(index, new THREE.Color((column + row) % 6 === 0 ? 0x395d66 : 0x638184));
+          dummy.scale.setScalar(vacant ? 0.001 : 1);
+          dummy.position.y = height + 0.46;
+          dummy.updateMatrix();
+          torsos.setMatrixAt(index, dummy.matrix);
+          torsos.setColorAt(index, new THREE.Color(fabric[(column * 3 + row * 7) % fabric.length]));
+          dummy.position.y += 0.19;
+          dummy.updateMatrix();
+          heads.setMatrixAt(index, dummy.matrix);
+          heads.setColorAt(index, new THREE.Color(skin[(column * 5 + row * 3) % skin.length]));
+          index += 1;
+        }
+      }
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 8), materials.metal);
+      rail.position.set(sign * 3.92, 1.04, -0.1);
+      this.sideStands.add(rail);
+      for (const z of [-3.8, -1.85, 0.1, 2.05, 3.85]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.9, 6), materials.metal);
+        post.position.set(sign * 3.92, 0.56, z);
+        this.sideStands.add(post);
+      }
+    }
+    seats.receiveShadow = true;
+    seats.instanceMatrix.needsUpdate = true;
+    torsos.instanceMatrix.needsUpdate = true;
+    heads.instanceMatrix.needsUpdate = true;
+    this.sideStands.add(seats, torsos, heads);
   }
 
   /** Production equipment and architectural detail stay away from the playable
@@ -344,6 +414,48 @@ export class ArenaVisual {
   }
 
   private addVenueProps(materials: MaterialPalette): void {
+    const labGlass = new THREE.MeshPhysicalMaterial({
+      color: 0x637e84, metalness: 0.24, roughness: 0.26, clearcoat: 0.8, clearcoatRoughness: 0.2
+    });
+    for (const x of [-4.7, 4.7]) {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.55, 0.09), materials.tableEdge);
+      frame.position.set(x, 3.05, -5.56);
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(2.12, 1.38), labGlass);
+      pane.position.set(x, 3.05, -5.50);
+      this.trainingProps.add(frame, pane);
+      for (const y of [2.72, 3.13, 3.54]) {
+        const graph = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.009, 0.009), this.ledMaterial);
+        graph.position.set(x, y, -5.487);
+        this.trainingProps.add(graph);
+      }
+    }
+
+    const woodSlat = new THREE.BoxGeometry(0.13, 2.36, 0.12);
+    const slats = new THREE.InstancedMesh(woodSlat, materials.wood, 40);
+    const slat = new THREE.Object3D();
+    for (let index = 0; index < 40; index += 1) {
+      slat.position.set(-6.5 + index * 0.335, 2.88, -5.55);
+      slat.updateMatrix();
+      slats.setMatrixAt(index, slat.matrix);
+    }
+    slats.instanceMatrix.needsUpdate = true;
+    this.clubProps.add(slats);
+    for (const x of [-4.65, 4.65]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.77, 0.12),
+        new THREE.MeshStandardMaterial({ color: 0xffdeb0, emissive: 0xe6a754, emissiveIntensity: 0.7 }));
+      lamp.position.set(x, 3.3, -5.41);
+      this.clubProps.add(lamp);
+    }
+
+    for (const x of [-4.55, 4.55]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.095, 3.65, 0.11), this.ledMaterial);
+      pillar.position.set(x, 2.18, -5.43);
+      this.nightProps.add(pillar);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.095, 0.11), this.ledMaterial);
+    lintel.position.set(0, 4.04, -5.43);
+    this.nightProps.add(lintel);
+
     const cart = new THREE.Group();
     cart.name = "training-ball-cart";
     cart.position.set(3.4, 0, -2.6);
@@ -405,12 +517,29 @@ export class ArenaVisual {
   setProfile(profile: ArenaProfile): void {
     const floor = new THREE.Color(profile.floorColor);
     this.mainFloor.material.color.copy(floor);
-    this.courtFloor.material.color.copy(floor).lerp(new THREE.Color(0xb0ccd0), 0.58);
+    this.courtFloor.material.color.copy(floor).lerp(new THREE.Color(0x749ca6), 0.18);
+    const finish = profile.id as FloorFinish;
+    let surfaces = this.floorFinishes.get(finish);
+    if (!surfaces) {
+      const main = createArenaSurface(finish);
+      const playing = main.clone();
+      main.repeat.set(10, 13);
+      playing.repeat.set(6, 7);
+      main.needsUpdate = playing.needsUpdate = true;
+      surfaces = [main, playing];
+      this.floorFinishes.set(finish, surfaces);
+    }
+    this.mainFloor.material.map = surfaces[0];
+    this.courtFloor.material.map = surfaces[1];
+    this.mainFloor.material.roughness = profile.id === "club-hall" ? 0.69 : 0.83;
+    this.courtFloor.material.roughness = profile.id === "night-court" ? 0.74 : 0.64;
+    this.mainFloor.material.needsUpdate = this.courtFloor.material.needsUpdate = true;
     this.wallMaterial.color.setHex(profile.wallColor);
     this.ledMaterial.color.setHex(profile.accentColor);
     this.ledMaterial.emissive.setHex(profile.accentColor);
     this.ledMaterial.emissiveIntensity = profile.id === "night-court" ? 1.3 : 0.52;
     this.crowd.visible = profile.crowd !== "none";
+    this.sideStands.visible = profile.crowd === "full";
     this.courtGraphics.visible = profile.id !== "training-lab";
     this.trainingProps.visible = profile.id === "training-lab";
     this.clubProps.visible = profile.id === "club-hall";
@@ -461,5 +590,7 @@ export class ArenaVisual {
   dispose(): void {
     this.signageTexture.dispose();
     this.scoreTexture.dispose();
+    for (const surfaces of this.floorFinishes.values()) surfaces.forEach((surface) => surface.dispose());
+    this.floorFinishes.clear();
   }
 }
