@@ -1,12 +1,14 @@
 import type { GameConfig } from "../config/GameConfig";
 import type { EventBus } from "../core/EventBus";
 import { UI_THEME } from "./UiTheme";
+import { QualityScaler, type QualityLevel } from "../performance/QualityScaler";
 
 export class SettingsPanel {
   readonly root: HTMLDivElement;
   private readonly reducedMotion: HTMLInputElement;
   private readonly trails: HTMLInputElement;
   private readonly exposure: HTMLInputElement;
+  private readonly quality: HTMLSelectElement;
 
   constructor(
     private readonly container: HTMLElement,
@@ -19,6 +21,24 @@ export class SettingsPanel {
     this.root.className = "ttu-panel";
     const heading = document.createElement("strong");
     heading.textContent = "Presentation";
+    const qualityRow = document.createElement("label");
+    qualityRow.textContent = "Graphics quality";
+    qualityRow.style.cssText = "display:grid;gap:7px;font-size:12px;color:" + UI_THEME.muted + ";";
+    this.quality = document.createElement("select");
+    this.quality.style.cssText = "padding:9px;border:1px solid rgba(181,255,240,.24);border-radius:8px;background:#173039;color:" + UI_THEME.text + ";";
+    for (const level of ["low", "medium", "high", "ultra"] as QualityLevel[]) {
+      const option = document.createElement("option");
+      option.value = level;
+      option.textContent = level[0].toUpperCase() + level.slice(1);
+      this.quality.append(option);
+    }
+    this.quality.value = "high";
+    const scaler = new QualityScaler(config.graphics);
+    this.quality.addEventListener("change", () => {
+      scaler.setLevel(this.quality.value as QualityLevel);
+      events.emit("ui:toast", { message: `Graphics: ${this.quality.value}`, level: "info" });
+    });
+    qualityRow.append(this.quality);
     this.reducedMotion = this.checkbox("Reduced motion", config.graphics.reducedMotion, (value) => {
       config.graphics.reducedMotion = value;
       events.emit("ui:toast", { message: value ? "Camera motion reduced" : "Full camera motion enabled", level: "info" });
@@ -39,7 +59,8 @@ export class SettingsPanel {
       config.graphics.toneMappingExposure = Number(this.exposure.value);
     });
     exposureRow.appendChild(this.exposure);
-    this.root.append(heading, this.row("Controls", "WASD · pointer · gamepad"), this.row("Physics", config.physics.fixedHz + " Hz fixed step"), exposureRow);
+    this.root.append(heading, this.row("Controls", "WASD · pointer · gamepad"),
+      this.row("Physics", config.physics.fixedHz + " Hz fixed step"), qualityRow, exposureRow);
     this.root.append(this.checkboxElement("Reduced motion", this.reducedMotion), this.checkboxElement("Ball trail", this.trails));
     container.appendChild(this.root);
   }

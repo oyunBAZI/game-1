@@ -10,8 +10,10 @@ export class GameRenderer {
   private readonly environmentTarget: THREE.WebGLRenderTarget;
   private resizeObserver: ResizeObserver | null = null;
   private container: HTMLElement | null = null;
+  private pixelRatioCap: number;
 
   constructor(config: GraphicsConfig) {
+    this.pixelRatioCap = config.pixelRatioCap;
     this.renderer = new THREE.WebGLRenderer({
       antialias: config.antialias,
       powerPreference: "high-performance",
@@ -56,6 +58,13 @@ export class GameRenderer {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+  }
+
+  setPixelRatioCap(cap: number): void {
+    if (cap === this.pixelRatioCap) return;
+    this.pixelRatioCap = cap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
+    this.resize();
   }
 
   render(): void {

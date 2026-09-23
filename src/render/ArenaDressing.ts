@@ -6,6 +6,7 @@ import type { ArenaProfile } from "../content/ArenaCatalog";
 export class ArenaDressing {
   readonly group = new THREE.Group();
   readonly national = new THREE.Group();
+  readonly finals = new THREE.Group();
   readonly club = new THREE.Group();
   readonly lab = new THREE.Group();
   readonly night = new THREE.Group();
@@ -22,13 +23,15 @@ export class ArenaDressing {
   constructor() {
     this.group.name = "arena-architecture";
     this.national.name = "national-broadcast-architecture";
+    this.finals.name = "world-finals-architecture";
     this.club.name = "club-architecture";
     this.lab.name = "training-architecture";
     this.night.name = "night-architecture";
-    this.group.add(this.national, this.club, this.lab, this.night);
+    this.group.add(this.national, this.finals, this.club, this.lab, this.night);
     const structural = new THREE.MeshStandardMaterial({ color: 0x1a2a31, roughness: 0.55, metalness: 0.55 });
     this.addCeiling(structural);
     this.addNational(structural);
+    this.addFinals(structural);
     this.addClub(structural);
     this.displayTexture = this.makeTrainingDisplay();
     this.addLab(structural);
@@ -111,6 +114,66 @@ export class ArenaDressing {
       this.national.add(edge);
     }
     this.addRectangularRig(this.national, structural, 4.25, 2.95, 4.64);
+  }
+
+  /** A distinct championship silhouette. The ring, rear pennants and tiers
+   * live outside the playing space, leaving the ball and scoreboard readable. */
+  private addFinals(structural: THREE.Material): void {
+    const copper = new THREE.MeshPhysicalMaterial({
+      color: 0xa88259, metalness: 0.79, roughness: 0.3, clearcoat: 0.24
+    });
+    const inner = new THREE.MeshStandardMaterial({ color: 0x273944, metalness: 0.52, roughness: 0.52 });
+    const fabric = new THREE.MeshStandardMaterial({
+      color: 0xd6a365, roughness: 0.85, side: THREE.DoubleSide
+    });
+    for (const radius of [0, 0.23]) {
+      const ring = new THREE.EllipseCurve(0, 0, 4.95 + radius, 3.72 + radius, 0, Math.PI * 2);
+      const path = new THREE.CatmullRomCurve3(ring.getPoints(96).map(({ x, y }) =>
+        new THREE.Vector3(x, 4.61, y - 0.3)), true);
+      const rim = new THREE.Mesh(new THREE.TubeGeometry(path, 128, radius ? 0.042 : 0.075, 8, true),
+        radius ? this.accent : copper);
+      rim.name = "championship-light-ring";
+      this.finals.add(rim);
+    }
+    for (const side of [-1, 1]) {
+      for (const x of [2.55, 4.65]) {
+        const centerX = side * x;
+        const support = new THREE.Mesh(new THREE.BoxGeometry(0.13, 3.5, 0.24), structural);
+        support.position.set(centerX, 2.8, -5.48);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.35), copper);
+        foot.position.set(centerX, 1.11, -5.42);
+        this.finals.add(support, foot);
+      }
+      const gallery = new THREE.Mesh(new THREE.BoxGeometry(3.88, 0.19, 0.68), inner);
+      gallery.position.set(side * 3.62, 1.48, -5.05);
+      const litEdge = new THREE.Mesh(new THREE.BoxGeometry(3.88, 0.029, 0.074), copper);
+      litEdge.position.set(side * 3.62, 1.60, -4.68);
+      this.finals.add(gallery, litEdge);
+
+      for (const x of [2.85, 4.28]) {
+        const banner = new THREE.PlaneGeometry(1.08, 1.4, 12, 14);
+        const position = banner.getAttribute("position");
+        for (let index = 0; index < position.count; index += 1) {
+          const px = position.getX(index);
+          const py = position.getY(index);
+          position.setZ(index, Math.sin(px * 7 + py * 3) * 0.025 * (1 - py / 1.6));
+        }
+        banner.computeVertexNormals();
+        const pennant = new THREE.Mesh(banner, fabric);
+        pennant.name = "championship-pennant";
+        pennant.position.set(side * x, 3.4, -5.31);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.055, 0.055), copper);
+        cap.position.set(side * x, 4.14, -5.29);
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.24, 0.012), inner);
+        stripe.position.set(side * x, 3.44, -5.272);
+        this.finals.add(pennant, cap, stripe);
+      }
+    }
+    for (const z of [-4.5, 4.15]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(10.3, 0.12, 0.14), structural);
+      beam.position.set(0, 4.72, z);
+      this.finals.add(beam);
+    }
   }
 
   private addRectangularRig(group: THREE.Group, structural: THREE.Material,
@@ -236,6 +299,7 @@ export class ArenaDressing {
 
   setProfile(profile: ArenaProfile): void {
     this.national.visible = profile.id === "national-arena";
+    this.finals.visible = profile.id === "world-finals";
     this.club.visible = profile.id === "club-hall";
     this.lab.visible = profile.id === "training-lab";
     this.night.visible = profile.id === "night-court";

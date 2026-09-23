@@ -59,6 +59,15 @@ export class ArenaLighting {
     }
   }
 
+  setShadowResolution(renderer: THREE.WebGLRenderer, size: number): void {
+    if (this.key.shadow.mapSize.x === size) return;
+    this.key.shadow.map?.dispose();
+    this.key.shadow.map = null;
+    this.key.shadow.mapSize.set(size, size);
+    this.key.shadow.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true;
+  }
+
   setExposure(renderer: THREE.WebGLRenderer, exposure: number): void {
     renderer.toneMappingExposure = exposure;
   }

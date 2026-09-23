@@ -26,7 +26,7 @@ export class QualityScaler {
   setLevel(level: QualityLevel): void {
     this.level = level;
     const presets: Record<QualityLevel, Partial<GraphicsConfig>> = {
-      low: { shadowMapSize: 512, pixelRatioCap: 1, showTrails: false },
+      low: { shadowMapSize: 512, pixelRatioCap: 1 },
       medium: { shadowMapSize: 1024, pixelRatioCap: 1.5 },
       high: { shadowMapSize: 2048, pixelRatioCap: 2 },
       ultra: { shadowMapSize: 4096, pixelRatioCap: 2.5 }

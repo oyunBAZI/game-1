@@ -80,6 +80,8 @@ export class RenderBridge {
     this.arena.updateScore(score.points.home, score.points.away, score.games.home, score.games.away);
     this.arena.update(dt, this.simulation.config.graphics.reducedMotion);
     this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
+    this.renderer.setPixelRatioCap(this.simulation.config.graphics.pixelRatioCap);
+    this.lighting.setShadowResolution(this.renderer.renderer, this.simulation.config.graphics.shadowMapSize);
     this.camera.update(dt, state.ball, this.simulation.config.graphics.reducedMotion);
     this.renderer.render();
   }

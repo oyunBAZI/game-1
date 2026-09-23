@@ -15,6 +15,20 @@ export interface ArenaProfile {
 
 export const ARENA_CATALOG: ArenaProfile[] = [
   {
+    id: "world-finals",
+    label: "World Finals",
+    description: "A championship stage with a copper light ring, hanging pennants and a packed gallery.",
+    floorColor: 0x3b5662,
+    wallColor: 0x14232d,
+    accentColor: 0xe7ad6f,
+    lightColor: 0xfff0da,
+    lightIntensity: 4.1,
+    fogNear: 9,
+    fogFar: 30,
+    crowd: "full",
+    music: "arena"
+  },
+  {
     id: "training-lab",
     label: "Training Lab",
     description: "A quiet, readable court for calibration and drills.",

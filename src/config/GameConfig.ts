@@ -136,7 +136,7 @@ export function createDefaultConfig(): GameConfig {
       rubbers: RUBBER_DEFAULTS
     },
     graphics: {
-      arenaId: "national-arena",
+      arenaId: "world-finals",
       antialias: true,
       shadows: true,
       shadowMapSize: 2048,

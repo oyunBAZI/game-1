@@ -31,6 +31,7 @@ export class PlayerVisual {
   private readonly jerseyPrint: THREE.CanvasTexture;
   private readonly groundShadow: THREE.CanvasTexture;
   private readonly forward: number;
+  private stridePhase = 0;
 
   constructor(side: Side) {
     this.group.name = side + "-athlete";
@@ -211,6 +212,7 @@ export class PlayerVisual {
   sync(player: PlayerState, paddle: PaddleState, alpha: number, time: number, ball?: BallState): void {
     const position = player.previousPosition.clone().lerp(player.position, alpha);
     this.group.position.set(position.x, position.y, position.z);
+    const elapsed = this.lastPoseTime < 0 ? 1 / 60 : Math.max(0, Math.min(0.05, time - this.lastPoseTime));
     if (ball) {
       const dx = ball.position.x - position.x;
       const dz = this.forward * (ball.position.z - position.z);
@@ -218,7 +220,6 @@ export class PlayerVisual {
       const horizontal = Math.max(0.35, Math.hypot(dx, dz));
       const yaw = THREE.MathUtils.clamp(this.forward * Math.atan2(dx, Math.max(0.2, dz)), -0.42, 0.42);
       const pitch = THREE.MathUtils.clamp(-this.forward * Math.atan2(dy, horizontal), -0.22, 0.22);
-      const elapsed = this.lastPoseTime < 0 ? 1 / 60 : Math.max(0, Math.min(0.05, time - this.lastPoseTime));
       const weight = 1 - Math.exp(-10 * elapsed);
       this.headPivot.rotation.y += (yaw - this.headPivot.rotation.y) * weight;
       this.headPivot.rotation.x += (pitch - this.headPivot.rotation.x) * weight;
@@ -251,21 +252,40 @@ export class PlayerVisual {
     this.otherHand.position.copy(otherHand);
 
     const pace = Math.min(1, player.velocity.length() / Math.max(1, player.maxSpeed));
-    const sway = Math.sin(time * 12) * 0.07 * pace;
+    // Drive gait from travelled distance instead of clock time. A paused or
+    // stationary athlete keeps planted feet; faster lateral steps cycle more
+    // quickly, and only the recovering foot rises from the court.
+    this.stridePhase += Math.min(0.05, elapsed) * player.velocity.length() * 13;
+    const lateralDirection = player.velocity.x / Math.max(0.2, player.velocity.length());
+    const depthDirection = player.velocity.z / Math.max(0.2, player.velocity.length());
     for (let index = 0; index < 2; index += 1) {
       const x = index ? 0.088 : -0.088;
-      const stride = sway * (index ? -1 : 1);
+      const phase = this.stridePhase + index * Math.PI;
+      const stride = Math.sin(phase) * pace;
+      const lift = Math.max(0, Math.cos(phase)) ** 2 * 0.064 * pace;
       const hip = new THREE.Vector3(x, 0.69, 0);
-      const knee = new THREE.Vector3(x * 1.25 + lateral * 0.045, 0.38, this.forward * (0.06 + stride));
-      const ankle = new THREE.Vector3(x * 1.5 + lateral * 0.09, 0.08, this.forward * (0.08 - stride));
+      const ankle = new THREE.Vector3(
+        x * 1.5 + lateralDirection * stride * 0.11,
+        0.08 + lift,
+        this.forward * 0.08 + depthDirection * stride * 0.11
+      );
+      const knee = new THREE.Vector3(
+        (hip.x + ankle.x) * 0.5 + lateralDirection * 0.025,
+        0.38 + lift * 0.42,
+        (hip.z + ankle.z) * 0.5 + this.forward * 0.045
+      );
       this.placeSegment(this.thighs[index], hip, knee);
       this.placeSegment(this.calves[index], knee, ankle);
       this.knees[index].position.copy(knee);
-      this.socks[index].position.copy(ankle).setY(0.145);
-      this.shoes[index].position.set(ankle.x, 0.045, ankle.z + this.forward * 0.05);
-      this.soles[index].position.set(ankle.x, 0.018, ankle.z + this.forward * 0.05);
+      this.socks[index].position.copy(ankle).add(new THREE.Vector3(0, 0.065, 0));
+      this.shoes[index].position.set(ankle.x, 0.045 + lift, ankle.z + this.forward * 0.05);
+      this.soles[index].position.set(ankle.x, 0.018 + lift, ankle.z + this.forward * 0.05);
+      this.shoes[index].rotation.y = lateralDirection * stride * 0.19;
+      this.soles[index].rotation.y = this.shoes[index].rotation.y;
       this.footShadows[index].position.set(ankle.x, 0.009, ankle.z + this.forward * 0.05);
-      (this.footShadows[index].material as THREE.MeshBasicMaterial).opacity = 0.36 - pace * 0.08;
+      this.footShadows[index].scale.setScalar(1 + lift * 3);
+      (this.footShadows[index].material as THREE.MeshBasicMaterial).opacity =
+        (0.36 - pace * 0.08) * Math.exp(-lift * 9);
     }
   }
 

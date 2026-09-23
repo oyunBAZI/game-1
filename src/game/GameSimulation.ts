@@ -106,7 +106,7 @@ export class GameSimulation implements FixedStepParticipant {
         4 + this.config.difficulty.movementSpeed, this.world.state.players.away.position);
       paddle.swingVelocity.copy(aiAction.paddleNormal).multiplyScalar(aiAction.swing * 3.5);
       this.world.setDesiredSpin("away", aiAction.spin);
-    }, simulateBall);
+    }, simulateBall, this.match.phase() === "point");
     if (result.ballOut) {
       const lastSide = this.world.state.ball.lastContactSide ?? "home";
       this.events.emit("physics:out", { side: lastSide, reason: result.outReason ?? "out" });

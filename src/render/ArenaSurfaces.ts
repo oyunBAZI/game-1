@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-export type FloorFinish = "training-lab" | "club-hall" | "national-arena" | "night-court";
+export type FloorFinish = "training-lab" | "club-hall" | "national-arena" | "night-court" | "world-finals";
 
 /** Repeatable, seeded color/roughness detail. No image download or shader compile is needed. */
 export function createArenaSurface(finish: FloorFinish): THREE.CanvasTexture {
@@ -29,6 +29,12 @@ export function createArenaSurface(finish: FloorFinish): THREE.CanvasTexture {
         } else if (finish === "night-court") {
           tone = 194 + noise * 1.1 + Math.sin(x * 0.7) * Math.sin(y * 0.7) * 3;
           if (x % 32 === 0 || y % 32 === 0) tone -= 7;
+        } else if (finish === "world-finals") {
+          // Dense non-slip championship vinyl with fine rolled texture and
+          // intermittent skate marks at the outside of the playing volume.
+          const grain = Math.sin(x * 0.43) * Math.sin(y * 0.57) * 4;
+          const mark = y % 91 < 2 && x > 56 && x < 180 ? -11 : 0;
+          tone = 222 + noise * 0.7 + grain + mark;
         } else {
           // Tournament vinyl: subtle factory stipple and rare shoe-scuff streaks.
           const scuff = (y % 83 < 2 && x > 35 && x < 155) ? 12 : 0;

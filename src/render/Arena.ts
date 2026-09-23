@@ -29,6 +29,8 @@ export class ArenaVisual {
   private readonly trainingProps = new THREE.Group();
   private readonly clubProps = new THREE.Group();
   private readonly nightProps = new THREE.Group();
+  private readonly finalsProps = new THREE.Group();
+  private readonly finalsMarkTexture: THREE.CanvasTexture;
   private readonly signMaterial: THREE.MeshBasicMaterial;
   private displayedScore = "";
 
@@ -51,7 +53,9 @@ export class ArenaVisual {
     this.addSpectatorDetails(this.sideStands);
     this.addProductionDetails(materials);
     this.addVenueProps(materials);
-    this.group.add(this.crowd, this.sideStands, this.courtGraphics, this.trainingProps, this.clubProps, this.nightProps);
+    this.finalsMarkTexture = this.addFinalsMarks();
+    this.group.add(this.crowd, this.sideStands, this.courtGraphics,
+      this.trainingProps, this.clubProps, this.nightProps, this.finalsProps);
     this.scoreCanvas = document.createElement("canvas");
     this.scoreCanvas.width = 1024;
     this.scoreCanvas.height = 256;
@@ -606,6 +610,42 @@ export class ArenaVisual {
     }
   }
 
+  private addFinalsMarks(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 256);
+      ctx.strokeStyle = "rgba(232,183,121,.8)";
+      ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(128, 128, 96, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(128, 128, 84, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#f5d1a0";
+      ctx.textAlign = "center";
+      ctx.font = "bold 77px Arial, sans-serif";
+      ctx.fillText("WT", 128, 143);
+      ctx.font = "bold 20px Arial, sans-serif";
+      ctx.fillText("WORLD FINALS", 128, 185);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    const material = new THREE.MeshBasicMaterial({
+      map: texture, transparent: true, opacity: 0.82, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false
+    });
+    const geometry = new THREE.PlaneGeometry(1.36, 1.36);
+    for (const x of [-2.46, 2.46]) {
+      const logo = new THREE.Mesh(geometry, material);
+      logo.name = "finals-floor-crest";
+      logo.rotation.x = -Math.PI / 2;
+      logo.position.set(x, 0.013, 0);
+      this.finalsProps.add(logo);
+    }
+    return texture;
+  }
+
   setProfile(profile: ArenaProfile): void {
     this.dressing.setProfile(profile);
     this.atmosphere.setProfile(profile);
@@ -639,6 +679,7 @@ export class ArenaVisual {
     this.trainingProps.visible = profile.id === "training-lab";
     this.clubProps.visible = profile.id === "club-hall";
     this.nightProps.visible = profile.id === "night-court";
+    this.finalsProps.visible = profile.id === "world-finals";
     const ctx = this.signageCanvas.getContext("2d");
     if (ctx) {
       ctx.fillStyle = "#101c25";
@@ -687,6 +728,7 @@ export class ArenaVisual {
     this.atmosphere.dispose();
     this.signageTexture.dispose();
     this.scoreTexture.dispose();
+    this.finalsMarkTexture.dispose();
     for (const surfaces of this.floorFinishes.values()) surfaces.forEach((surface) => surface.dispose());
     this.floorFinishes.clear();
   }

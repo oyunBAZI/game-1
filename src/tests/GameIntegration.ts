@@ -236,6 +236,42 @@ function testContinuousContactAndSpin(): void {
     "topspin should kick forward more than backspin after the table bounce");
 }
 
+function testImpactTimeAndPointPause(): void {
+  // A spinning, forced ball reaches the table partway through a frame. Compare
+  // the full frame with a much finer run using the same aerodynamic forces.
+  const run = (steps: number): BallState => {
+    const world = new PhysicsWorld(new EventBus());
+    world.state.paddles.home.active = false;
+    world.state.paddles.away.active = false;
+    const ball = world.state.ball.reset(
+      new Vec3(0.05, TABLE.top + BALL.radius + 0.064, 0.57),
+      new Vec3(0.8, -10, -5)
+    );
+    ball.angularVelocity.set(300, 180, 20);
+    for (let i = 0; i < steps; i += 1) {
+      world.fixedStep(1 / (90 * steps), () => ball.addForce(new Vec3(0.001, 0, 0)));
+    }
+    assert(ball.contactCount === 1, "one approaching ball should produce exactly one table impact");
+    return ball;
+  };
+  const coarse = run(1);
+  const reference = run(32);
+  assert(coarse.position.distanceTo(reference.position) < 0.002 &&
+    coarse.velocity.distanceTo(reference.velocity) < 0.12,
+    "impact velocity and the remaining flight must converge toward a fine-step reference");
+
+  const world = new PhysicsWorld(new EventBus());
+  const ball = world.state.ball.reset(new Vec3(2.5, 0.085, 1.4), new Vec3(1, -2.4, 0.4));
+  const initialPosition = ball.position.clone();
+  for (let i = 0; i < 180; i += 1) {
+    const result = world.fixedStep(1 / 240, undefined, false, true);
+    assert(!result.ballOut, "loose-ball animation cannot score a second point");
+  }
+  assert(ball.position.distanceTo(initialPosition) > 0.12 &&
+    ball.position.y >= ball.radius - 1e-9 && ball.position.y < ball.radius + 0.02,
+    "a loose ball must fall onto the floor and settle rather than freeze in midair");
+}
+
 function testForecastAndRestoration(): void {
   const world = new PhysicsWorld(new EventBus());
   const ball = world.state.ball;
@@ -421,7 +457,7 @@ function testModelConstruction(): void {
   const context = {
     createImageData: (width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4) }),
     putImageData: () => {}, clearRect: () => {}, fillRect: () => {},
-    beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {},
+    beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {}, arc: () => {},
     ellipse: () => {}, fillText: () => {},
     createLinearGradient: () => ({ addColorStop: () => {} }),
     createRadialGradient: () => ({ addColorStop: () => {} }),
@@ -492,6 +528,11 @@ function testModelConstruction(): void {
   assert(arena.dressing.national.visible && !arena.dressing.club.visible &&
     arena.group.getObjectByName("ceiling-coffers") instanceof THREE.InstancedMesh,
     "competition architecture and instanced ceiling panels must follow the venue");
+  arena.setProfile(getArena("world-finals"));
+  assert(arena.dressing.finals.visible && !arena.dressing.national.visible &&
+    gallery?.visible && arena.group.getObjectsByProperty("name", "championship-pennant").length >= 4 &&
+    arena.group.getObjectsByProperty("name", "finals-floor-crest").length === 2,
+    "world finals must show its own architecture, floor crests and packed galleries");
   arena.setProfile(getArena("night-court"));
   assert(arena.dressing.night.visible && Boolean(arena.group.getObjectByName("night-portal")),
     "the night venue must have its own architectural silhouette");
@@ -524,6 +565,7 @@ export function runGameTests(): void {
   testTableAndNet();
   testWovenNet();
   testContinuousContactAndSpin();
+  testImpactTimeAndPointPause();
   testFlightConvergence();
   testForecastAndRestoration();
   testRallyScoring();

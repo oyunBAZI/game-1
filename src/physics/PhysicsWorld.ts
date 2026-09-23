@@ -90,7 +90,7 @@ export class PhysicsWorld {
     this.desiredSpin[side].copy(spin).clampMagnitude(this.tuning.maxSpinRate);
   }
 
-  fixedStep(dt: number, controls?: () => void, simulateBall = true): PhysicsStepResult {
+  fixedStep(dt: number, controls?: () => void, simulateBall = true, looseBall = false): PhysicsStepResult {
     const world = this.state;
     world.beginStep();
     controls?.();
@@ -105,6 +105,11 @@ export class PhysicsWorld {
     if (simulateBall) {
       this.advanceBall(dt);
       outReason = this.detectOut();
+    } else if (looseBall) {
+      // Point scoring is finished, but the ball keeps moving through the same
+      // table and net contacts until the next serve is prepared.
+      this.advanceBall(dt);
+      this.settleLooseBall(dt);
     }
     world.finishStep(dt);
     for (const contact of this.contacts) this.emitContact(contact);
@@ -124,15 +129,30 @@ export class PhysicsWorld {
       const start = ball.position.clone();
       const startVelocity = ball.velocity.clone();
       const startSpin = ball.angularVelocity.clone();
+      const startForce = ball.force.clone();
+      const startTorque = ball.torque.clone();
       ball.previousPosition.copy(start);
+      // The full step is a collision probe. It must not consume the forces or
+      // determine the impact velocity: drag and Magnus lift are nonlinear, so
+      // interpolating the end velocity makes a struck ball depend on the size
+      // of the portion of the frame after contact.
       this.integrator.integrate(ball, remaining);
       const hit = this.firstHit(elapsed / dt, (elapsed + remaining) / dt);
       if (!hit) { remaining = 0; break; }
       const fraction = Math.max(0, Math.min(1, hit.contact.timeOfImpact));
-      ball.position.copy(start).lerp(ball.position, fraction);
-      ball.velocity.copy(startVelocity).lerp(ball.velocity, fraction);
-      ball.angularVelocity.copy(startSpin).lerp(ball.angularVelocity, fraction);
+      ball.position.copy(start);
+      ball.velocity.copy(startVelocity);
+      ball.angularVelocity.copy(startSpin);
+      ball.force.copy(startForce);
+      ball.torque.copy(startTorque);
+      if (fraction > 0) this.integrator.integrate(ball, remaining * fraction);
       const globalTime = (elapsed + remaining * fraction) / dt;
+      const normal = Vec3.from(hit.contact.normal);
+      const surfaceVelocity = hit.kind === "paddle"
+        ? this.state.paddles[hit.contact.side!].velocityAt(Vec3.from(hit.contact.point), globalTime)
+        : hit.kind === "net" && hit.contact.surfaceId === "net-mesh"
+          ? this.net.velocityAt(hit.contact.point.x, hit.contact.point.y) : new Vec3();
+      hit.contact.relativeSpeed = Math.max(0, -ball.velocity.clone().sub(surfaceVelocity).dot(normal));
       this.resolveHit(hit, globalTime);
       hit.contact.timeOfImpact = globalTime;
       this.contacts.push(hit.contact);
@@ -204,11 +224,32 @@ export class PhysicsWorld {
 
   private detectOut(): string | null {
     const ball = this.state.ball;
-    if (ball.position.y < -0.15) return "floor";
+    if (ball.position.y <= ball.radius) {
+      ball.position.y = ball.radius;
+      return "floor";
+    }
     if (Math.abs(ball.position.x) > 2.4) return "wide";
     if (Math.abs(ball.position.z) > 3.2) return "long";
     if (ball.age > 7.5 && ball.position.y < TABLE.top) return "stale";
     return null;
+  }
+
+  private settleLooseBall(dt: number): void {
+    const ball = this.state.ball;
+    if (ball.position.y > ball.radius) return;
+    ball.position.y = ball.radius;
+    if (ball.velocity.y < -0.24) {
+      ball.velocity.y = -ball.velocity.y * this.tuning.floorRestitution;
+      ball.velocity.x *= 0.78;
+      ball.velocity.z *= 0.78;
+      ball.angularVelocity.multiplyScalar(0.7);
+    } else {
+      ball.velocity.y = 0;
+      ball.velocity.x *= Math.exp(-4 * dt);
+      ball.velocity.z *= Math.exp(-4 * dt);
+      ball.angularVelocity.multiplyScalar(Math.exp(-6 * dt));
+    }
+    ball.grounded = true;
   }
 
   private emitContact(contact: CollisionContact): void {
