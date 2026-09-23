@@ -75,7 +75,9 @@ export class PhysicsWorld {
 
   serve(side: Side, velocity: Vec3, spin = new Vec3()): void {
     const sign = side === "home" ? 1 : -1;
-    const position = new Vec3(0, TABLE.top + 0.20, sign * 0.62);
+    // The strike takes place just inside the server's end line. The racket
+    // and hand can actually reach this position from behind the table.
+    const position = new Vec3(0, TABLE.top + 0.30, sign * 1.05);
     const direction = velocity.clone();
     if (Math.sign(direction.z) === sign || Math.abs(direction.z) < 0.01) direction.z = -sign * Math.abs(direction.z || 4.5);
     this.state.ball.reset(position, direction);

@@ -52,7 +52,8 @@ export class PlayerController {
       this.side === "home" ? -0.32 + this.intent.paddleOffset.z : 0.32 + this.intent.paddleOffset.z
     ));
     this.targetNormal.copy(this.intent.paddleNormal);
-    this.collider.placeForInput(this.paddle, this.targetPaddle, this.targetNormal, dt, 8 + this.player.energy * 2);
+    this.collider.placeForInput(this.paddle, this.targetPaddle, this.targetNormal, dt,
+      8 + this.player.energy * 2, this.player.position);
     this.paddle.swingVelocity.copy(this.paddle.normal).multiplyScalar(this.intent.swing * (2 + this.player.energy * 3));
     this.paddle.swingVelocity.addScaled(this.intent.move, 1.2);
   }

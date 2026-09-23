@@ -49,7 +49,7 @@ export class MatchController {
     this.events.on("rally:let", () => {
       if (this.phase() !== "rally") return;
       this.serve.replayLet();
-      this.world.state.ball.reset();
+      this.serve.prepare(this.nextServer);
       this.machine.transitionTo("serve");
       this.events.emit("ui:toast", { message: "LET — replay the serve", level: "info" });
     });
@@ -63,6 +63,7 @@ export class MatchController {
     this.nextServer = server;
     this.pointDelay = 0;
     this.gamesCompleted = 0;
+    this.serve.prepare(server);
     this.machine.transitionTo("serve");
   }
 
@@ -76,7 +77,10 @@ export class MatchController {
       this.pointDelay -= dt;
       if (this.pointDelay <= 0) {
         if (this.scoreboard.matchWinner) this.machine.transitionTo("finished");
-        else this.machine.transitionTo("serve");
+        else {
+          this.serve.prepare(this.nextServer);
+          this.machine.transitionTo("serve");
+        }
       }
     }
   }

@@ -229,7 +229,7 @@ export class PlayerVisual {
       paddle.previousPosition.y + (paddle.position.y - paddle.previousPosition.y) * alpha - position.y - 0.105,
       paddle.previousPosition.z + (paddle.position.z - paddle.previousPosition.z) * alpha - position.z
     );
-    const shoulder = new THREE.Vector3(0.205, 1.27, 0);
+    const shoulder = new THREE.Vector3(0.205, 1.27, this.forward * 0.12);
     const elbow = this.solveElbow(shoulder, hand);
     this.placeSegment(this.upperArm, shoulder, elbow);
     this.placeSegment(this.forearm, elbow, hand);
@@ -280,8 +280,8 @@ export class PlayerVisual {
     const direction = hand.clone().sub(shoulder);
     const reach = Math.max(0.001, direction.length());
     direction.divideScalar(reach);
-    const upper = 0.335;
-    const lower = 0.305;
+    const upper = 0.40;
+    const lower = 0.37;
     const constrainedReach = Math.min(reach, upper + lower - 0.001);
     const along = (upper * upper - lower * lower + constrainedReach * constrainedReach) / (2 * constrainedReach);
     const bend = new THREE.Vector3(0.42, -0.32, -this.forward * 0.27).projectOnPlane(direction).normalize();

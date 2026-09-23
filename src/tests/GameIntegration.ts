@@ -7,6 +7,7 @@ import { RallyController } from "../game/RallyController";
 import { Scoreboard } from "../game/Scoreboard";
 import { TRAINING_RULES } from "../game/Rules";
 import { MatchController } from "../game/MatchController";
+import { ServeController, type ServeStyle } from "../game/ServeController";
 import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
@@ -370,6 +371,52 @@ function testPlayableSimulation(): void {
     "AI serve must happen automatically and bounce on both halves in reverse order");
 }
 
+function testFittedServesAndHumanReach(): void {
+  for (const seed of [441, 751]) {
+    for (const style of ["flat", "topspin", "backspin", "pendulum", "kick", "lob"] as ServeStyle[]) {
+      for (const side of ["home", "away"] as Side[]) {
+        const world = new PhysicsWorld(new EventBus());
+        const serve = new ServeController(new EventBus(), world, TRAINING_RULES, seed);
+        const plan = serve.begin(side, style);
+        const held = world.state.ball.position.y;
+        serve.update(0.21);
+        assert(world.state.ball.position.y > held + 0.16 && serve.isServing(),
+          "service must show an upward toss before the racket launches the ball");
+        serve.update(0.21);
+        assert(!serve.isServing(), "service must launch after the toss");
+        world.state.paddles.home.active = world.state.paddles.away.active = false;
+        const bounces: CollisionContact[] = [];
+        let net = false;
+        for (let tick = 0; tick < 360 && bounces.length < 2; tick += 1) {
+          const step = world.fixedStep(1 / 240);
+          for (const hit of step.contacts) {
+            if (hit.kind === "net") net = true;
+            if (hit.kind === "table" || hit.kind === "edge") bounces.push(hit);
+          }
+          if (step.ballOut) break;
+        }
+        assert(!net && bounces.length === 2 && bounces.every((hit) => hit.surfaceId === "table-top"),
+          `${style} ${side} must clear the net and land twice on the playing surface`);
+        assert(Math.abs(bounces[0].point.z - plan.firstBounceZ) < 0.04 &&
+          Math.abs(bounces[1].point.z - plan.secondBounceZ) < 0.04 &&
+          Math.abs(bounces[1].point.x - plan.targetX) < 0.04,
+        `${style} ${side} must land near its chosen service targets with live physics`);
+      }
+    }
+  }
+  const world = new PhysicsWorld(new EventBus());
+  for (const side of ["home", "away"] as Side[]) {
+    const paddle = world.state.paddles[side];
+    const player = world.state.players[side];
+    const target = new Vec3(-0.95, 1.75, side === "home" ? 0.12 : -0.12);
+    world.paddles.placeForInput(paddle, target, paddle.normal, 0.2, 20, player.position);
+    const shoulder = new Vec3(player.position.x + 0.205, player.position.y + 1.27,
+      player.position.z + (side === "home" ? -0.12 : 0.12));
+    assert(paddle.position.clone().add(new Vec3(0, -0.105, 0)).distanceTo(shoulder) <= 0.771,
+      "a player's racket grip must stay within its arm's reach");
+  }
+}
+
 function testModelConstruction(): void {
   const context = {
     createImageData: (width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4) }),
@@ -430,6 +477,18 @@ function testModelConstruction(): void {
   arena.setProfile(getArena("national-arena"));
   assert(arena.group.getObjectByName("arena-side-stands")?.visible === true,
     "the national arena must enable its instanced side galleries");
+  const spectatorHeads = arena.group.getObjectByName("side-spectator-heads") as THREE.InstancedMesh;
+  assert(arena.group.getObjectByName("side-spectator-arms") instanceof THREE.InstancedMesh &&
+    arena.group.getObjectByName("side-spectator-hair") instanceof THREE.InstancedMesh,
+    "the national gallery must model spectator limbs and hair in instanced batches");
+  const originalHeight = spectatorHeads.instanceMatrix.array[13];
+  arena.celebrate();
+  arena.update(0.12);
+  assert(spectatorHeads.instanceMatrix.array[13] > originalHeight,
+    "the visible gallery should react when a point ends");
+  arena.update(2);
+  assert(spectatorHeads.instanceMatrix.array[13] === originalHeight,
+    "crowd animation must return to its resting pose");
   assert(arena.dressing.national.visible && !arena.dressing.club.visible &&
     arena.group.getObjectByName("ceiling-coffers") instanceof THREE.InstancedMesh,
     "competition architecture and instanced ceiling panels must follow the venue");
@@ -468,6 +527,7 @@ export function runGameTests(): void {
   testFlightConvergence();
   testForecastAndRestoration();
   testRallyScoring();
+  testFittedServesAndHumanReach();
   testPlayableSimulation();
   testModelConstruction();
   console.log("GAME INTEGRATION PASSED: contacts, rally rules, serve, AI return, and model construction");

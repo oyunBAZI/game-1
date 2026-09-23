@@ -94,7 +94,11 @@ export class AIBrain {
     }
     const intercept = playable.find((point) => point.position.z * sign >= 0.85) ?? playable.at(-1);
     const predicted = intercept?.position ?? this.prediction.position;
-    const lateralError = this.random.signed() * this.profile.placementError;
+    // The profile's placement error is measured in metres of *shot target*
+    // variation. Applying the full amount to the 155 mm racket face made a
+    // club player miss even routine, well predicted serves. Keep a smaller
+    // interception error; reaction time and foot speed remain the main limit.
+    const lateralError = this.random.signed() * this.profile.placementError * 0.22;
     this.target.set(
       clamp(predicted.x + lateralError, -1.1, 1.1),
       // Prepare the face above the tabletop at the forecast interception.

@@ -90,16 +90,20 @@ export class GameSimulation implements FixedStepParticipant {
     const result = this.world.fixedStep(dt, () => {
       this.playerController.update(dt);
       this.world.setDesiredSpin("home", this.playerController.desiredSpin());
+      const rally = this.match.rally.state;
+      const homePaddle = this.world.state.paddles.home;
+      homePaddle.active = rally.active && rally.serveStage === "complete" &&
+        rally.expectedBounce === "home" && rally.bouncesOnExpected > 0;
       const aiAction = simulateBall
         ? this.ai.update(dt, this.world.state.ball, this.world.state.players.away,
           this.world.state.paddles.away, this.world.net)
         : this.ai.prepare(this.world.state.players.away);
       this.world.state.players.away.velocity.copy(aiAction.move).multiplyScalar(this.config.difficulty.movementSpeed);
       const paddle = this.world.state.paddles.away;
-      const rally = this.match.rally.state;
       paddle.active = rally.active && rally.serveStage === "complete" &&
         rally.expectedBounce === "away" && rally.bouncesOnExpected > 0;
-      this.world.paddles.placeForInput(paddle, aiAction.paddleTarget, aiAction.paddleNormal, dt, 4 + this.config.difficulty.movementSpeed);
+      this.world.paddles.placeForInput(paddle, aiAction.paddleTarget, aiAction.paddleNormal, dt,
+        4 + this.config.difficulty.movementSpeed, this.world.state.players.away.position);
       paddle.swingVelocity.copy(aiAction.paddleNormal).multiplyScalar(aiAction.swing * 3.5);
       this.world.setDesiredSpin("away", aiAction.spin);
     }, simulateBall);

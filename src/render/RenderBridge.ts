@@ -25,6 +25,7 @@ export class RenderBridge {
   readonly players: Record<"home" | "away", PlayerVisual>;
   readonly contacts = new ContactEffects();
   private readonly unsubscribeContact: () => void;
+  private readonly unsubscribePoint: () => void;
   private readonly materials = createMaterialPalette();
   private currentArena = "";
 
@@ -57,6 +58,7 @@ export class RenderBridge {
       this.contacts.record(contact);
       if (contact.kind === "paddle") this.camera.addShake(0.045);
     });
+    this.unsubscribePoint = simulation.events.on("rally:end", () => this.arena.celebrate());
     this.applyArena();
   }
 
@@ -76,6 +78,7 @@ export class RenderBridge {
     this.contacts.update(dt);
     const score = this.simulation.match.scoreboard;
     this.arena.updateScore(score.points.home, score.points.away, score.games.home, score.games.away);
+    this.arena.update(dt, this.simulation.config.graphics.reducedMotion);
     this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
     this.camera.update(dt, state.ball, this.simulation.config.graphics.reducedMotion);
     this.renderer.render();
@@ -97,6 +100,7 @@ export class RenderBridge {
 
   dispose(): void {
     this.unsubscribeContact();
+    this.unsubscribePoint();
     this.arena.dispose();
     this.renderer.dispose();
   }

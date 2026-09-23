@@ -74,7 +74,8 @@ export class PaddleCollider {
     target: Vec3,
     targetNormal: Vec3,
     dt: number,
-    maxSpeed = 8
+    maxSpeed = 8,
+    playerPosition?: Vec3
   ): void {
     const delta = Vec3.from(target).sub(paddle.position);
     const maxDistance = maxSpeed * dt;
@@ -102,5 +103,19 @@ export class PaddleCollider {
     paddle.position.y = clamp(paddle.position.y, 0.42, 1.8);
     const sideSign = paddle.side === "home" ? 1 : -1;
     paddle.position.z = clamp(paddle.position.z, sideSign > 0 ? 0.12 : -1.82, sideSign > 0 ? 1.82 : -0.12);
+    if (playerPosition) {
+      // The centre of the blade is just above the gripping hand. Project the
+      // hand into an arm-length sphere around the lead shoulder; otherwise a
+      // distant pointer or forecast can create a telescoping athlete and an
+      // impossible racket contact. The renderer uses the same shoulder rig.
+      const shoulder = new Vec3(playerPosition.x + 0.205, playerPosition.y + 1.27,
+        playerPosition.z - sideSign * 0.12);
+      const grip = paddle.position.clone().add(new Vec3(0, -0.105, 0));
+      const reach = grip.sub(shoulder).clampMagnitude(0.77);
+      paddle.position.copy(shoulder.add(reach)).y += 0.105;
+      paddle.position.x = clamp(paddle.position.x, -0.95, 0.95);
+      paddle.position.y = clamp(paddle.position.y, 0.42, 1.8);
+      paddle.position.z = clamp(paddle.position.z, sideSign > 0 ? 0.12 : -1.82, sideSign > 0 ? 1.82 : -0.12);
+    }
   }
 }

@@ -20,6 +20,10 @@ export class ArenaVisual {
   private readonly ledMaterial = new THREE.MeshStandardMaterial({ color: 0x37a7a9, emissive: 0x136368, emissiveIntensity: 0.7 });
   private readonly crowd = new THREE.Group();
   private readonly sideStands = new THREE.Group();
+  private readonly animatedSpectators: Array<{ mesh: THREE.InstancedMesh; base: Float32Array }> = [];
+  private cheerTime = 0;
+  private cheerWasActive = false;
+  private baseLedIntensity = 0.52;
   private readonly floorFinishes = new Map<FloorFinish, [THREE.CanvasTexture, THREE.CanvasTexture]>();
   private readonly courtGraphics = new THREE.Group();
   private readonly trainingProps = new THREE.Group();
@@ -43,6 +47,8 @@ export class ArenaVisual {
     this.signMaterial = new THREE.MeshBasicMaterial({ map: this.signageTexture, side: THREE.DoubleSide });
     this.addBarriers(materials);
     this.addStands(materials);
+    this.addSpectatorDetails(this.crowd);
+    this.addSpectatorDetails(this.sideStands);
     this.addProductionDetails(materials);
     this.addVenueProps(materials);
     this.group.add(this.crowd, this.sideStands, this.courtGraphics, this.trainingProps, this.clubProps, this.nightProps);
@@ -253,6 +259,8 @@ export class ArenaVisual {
       new THREE.MeshStandardMaterial({ color: 0xbda58d, roughness: 0.95 }),
       columns * rows
     );
+    torsos.name = "rear-spectator-torsos";
+    heads.name = "rear-spectator-heads";
     const dummy = new THREE.Object3D();
     let index = 0;
     const shirtColors = [0x233a43, 0x537077, 0x87938f, 0x30606a, 0x3f4a51, 0x725c50];
@@ -315,6 +323,8 @@ export class ArenaVisual {
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), count);
     const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.061, 8, 6),
       new THREE.MeshStandardMaterial({ color: 0xbda58d, roughness: 0.91 }), count);
+    torsos.name = "side-spectator-torsos";
+    heads.name = "side-spectator-heads";
     const dummy = new THREE.Object3D();
     const fabric = [0x20333d, 0x738080, 0x916b61, 0x475c68, 0x38585b];
     const skin = [0xd3ab85, 0x93684d, 0xe2c19c, 0x64473e];
@@ -362,6 +372,82 @@ export class ArenaVisual {
     torsos.instanceMatrix.needsUpdate = true;
     heads.instanceMatrix.needsUpdate = true;
     this.sideStands.add(seats, torsos, heads);
+  }
+
+  /** Costume silhouette details reuse two instanced draws per gallery. The
+   * exposed arms and varied hair make people read as spectators at game
+   * distance without a separate draw call or texture for every seat. */
+  private addSpectatorDetails(stand: THREE.Group): void {
+    const prefix = stand === this.crowd ? "rear" : "side";
+    const torsos = stand.getObjectByName(`${prefix}-spectator-torsos`) as THREE.InstancedMesh;
+    const heads = stand.getObjectByName(`${prefix}-spectator-heads`) as THREE.InstancedMesh;
+    const arms = new THREE.InstancedMesh(
+      new THREE.CapsuleGeometry(0.025, 0.135, 3, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94 }), torsos.count * 2);
+    arms.name = `${prefix}-spectator-arms`;
+    const hair = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.064, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.53),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96 }), heads.count);
+    hair.name = `${prefix}-spectator-hair`;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const dummy = new THREE.Object3D();
+    const color = new THREE.Color();
+    const hairColors = [0x242426, 0x3d2c26, 0x72503b, 0x9b8263, 0x292c36];
+    for (let index = 0; index < torsos.count; index += 1) {
+      torsos.getMatrixAt(index, matrix);
+      matrix.decompose(position, rotation, scale);
+      const occupied = scale.x > 0.1;
+      torsos.getColorAt(index, color);
+      for (let arm = 0; arm < 2; arm += 1) {
+        const side = arm === 0 ? -1 : 1;
+        dummy.position.copy(position).add(new THREE.Vector3(side * 0.106, 0.005, 0).applyQuaternion(rotation));
+        dummy.quaternion.copy(rotation).multiply(new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1), side * 0.22));
+        dummy.scale.setScalar(occupied ? 1 : 0.001);
+        dummy.updateMatrix();
+        arms.setMatrixAt(index * 2 + arm, dummy.matrix);
+        arms.setColorAt(index * 2 + arm, color);
+      }
+      heads.getMatrixAt(index, matrix);
+      matrix.decompose(position, rotation, scale);
+      dummy.position.copy(position).add(new THREE.Vector3(0, 0.026, 0));
+      dummy.quaternion.copy(rotation);
+      dummy.scale.setScalar(occupied ? 1 : 0.001);
+      dummy.updateMatrix();
+      hair.setMatrixAt(index, dummy.matrix);
+      hair.setColorAt(index, new THREE.Color(hairColors[(index * 11 + (prefix === "side" ? 3 : 0)) % hairColors.length]));
+    }
+    arms.instanceMatrix.needsUpdate = hair.instanceMatrix.needsUpdate = true;
+    stand.add(arms, hair);
+    for (const mesh of [torsos, heads, arms, hair]) {
+      this.animatedSpectators.push({ mesh, base: new Float32Array(mesh.instanceMatrix.array) });
+    }
+  }
+
+  celebrate(): void {
+    this.cheerTime = 1.2;
+    this.cheerWasActive = true;
+  }
+
+  update(dt: number, reducedMotion = false): void {
+    if (!this.cheerWasActive) return;
+    this.cheerTime = Math.max(0, this.cheerTime - Math.max(0, dt));
+    const energy = reducedMotion ? 0 : this.cheerTime / 1.2;
+    const pulse = Math.sin((1.2 - this.cheerTime) * 26) * energy;
+    this.ledMaterial.emissiveIntensity = this.baseLedIntensity + Math.max(0, pulse) * 0.62;
+    for (const { mesh, base } of this.animatedSpectators) {
+      const positions = mesh.instanceMatrix.array;
+      for (let index = 0; index < mesh.count; index += 1) {
+        const offset = index * 16 + 13;
+        positions[offset] = base[offset] + (base[index * 16 + 5] > 0.1
+          ? Math.max(0, Math.sin((1.2 - this.cheerTime) * 17 + index * 1.7)) * energy * 0.055 : 0);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    if (this.cheerTime === 0) this.cheerWasActive = false;
   }
 
   /** Production equipment and architectural detail stay away from the playable
@@ -545,7 +631,8 @@ export class ArenaVisual {
     this.wallMaterial.color.setHex(profile.wallColor);
     this.ledMaterial.color.setHex(profile.accentColor);
     this.ledMaterial.emissive.setHex(profile.accentColor);
-    this.ledMaterial.emissiveIntensity = profile.id === "night-court" ? 1.3 : 0.52;
+    this.baseLedIntensity = profile.id === "night-court" ? 1.3 : 0.52;
+    this.ledMaterial.emissiveIntensity = this.baseLedIntensity;
     this.crowd.visible = profile.crowd !== "none";
     this.sideStands.visible = profile.crowd === "full";
     this.courtGraphics.visible = profile.id !== "training-lab";
