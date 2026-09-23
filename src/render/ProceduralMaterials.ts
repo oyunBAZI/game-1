@@ -34,13 +34,19 @@ export function createMaterialPalette(): MaterialPalette {
   tablePaint.repeat.set(2, 4);
   const floorVinyl = createSurfaceTexture(256, [185, 194, 196], 11, 4);
   floorVinyl.repeat.set(8, 11);
+  const finish = createRoughnessTexture(256);
+  finish.repeat.set(2, 4);
+  const floorFinish = finish.clone();
+  floorFinish.repeat.set(8, 11);
+  floorFinish.needsUpdate = true;
   const woodVeneer = createWoodVeneerTexture();
   const table = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, map: tablePaint, roughness: 0.43, metalness: 0.02,
+    color: 0xffffff, map: tablePaint, roughnessMap: finish, roughness: 0.47, metalness: 0.02,
     clearcoat: 0.21, clearcoatRoughness: 0.52, bumpMap: grain, bumpScale: 0.00065
   });
   const floor = new THREE.MeshStandardMaterial({
-    color: 0xffffff, map: floorVinyl, roughness: 0.72, bumpMap: floorGrain, bumpScale: 0.0018
+    color: 0xffffff, map: floorVinyl, roughnessMap: floorFinish,
+    roughness: 0.78, bumpMap: floorGrain, bumpScale: 0.0018
   });
   return {
     table,
@@ -56,6 +62,34 @@ export function createMaterialPalette(): MaterialPalette {
     metal: standard(0x88969d, 0.34, 0.68),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };
+}
+
+/** Fine matte variation and directional micro-scuffs change the specular
+ * response under the overhead softboxes without a downloaded asset. */
+function createRoughnessTexture(size: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const image = context.createImageData(size, size);
+    let seed = 207231;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+        const fibre = Math.sin(x * 0.08 + Math.sin(y * 0.035) * 1.4) * 7;
+        const scuff = y % 67 < 2 && x > 30 && x < 190 ? -25 : 0;
+        const value = Math.max(155, Math.min(255, 221 + ((seed >>> 0) % 37) - 18 + fibre + scuff));
+        const index = (y * size + x) * 4;
+        image.data[index] = image.data[index + 1] = image.data[index + 2] = value;
+        image.data[index + 3] = 255;
+      }
+    }
+    context.putImageData(image, 0, 0);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 /** Layered veneer with lengthwise fibres; generated locally and repeatable. */

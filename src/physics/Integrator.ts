@@ -6,8 +6,11 @@ import { BALL } from "./constants";
 import type { BallState, WorldState } from "./State";
 
 export class BallIntegrator {
-  private readonly acceleration = new Vec3();
   private readonly angularAcceleration = new Vec3();
+  private readonly startAcceleration = new Vec3();
+  private readonly middleAcceleration = new Vec3();
+  private readonly midpointVelocity = new Vec3();
+  private readonly midpointSpin = new Vec3();
   private readonly aerodynamics: Aerodynamics;
 
   constructor(private readonly tuning: PhysicsTuning) {
@@ -15,13 +18,22 @@ export class BallIntegrator {
   }
 
   integrate(ball: BallState, dt: number): void {
-    this.aerodynamics.apply(ball, dt);
-    this.acceleration.copy(ball.force).divideScalar(ball.mass);
-    ball.velocity.addScaled(this.acceleration, dt);
-    ball.velocity.clampMagnitude(this.tuning.maxBallSpeed);
-    ball.position.addScaled(ball.velocity, dt);
+    // The ball is light enough that drag and Magnus lift change throughout a
+    // flight segment. Sample them at the midpoint so both the live world and
+    // its trajectory predictor converge as the fixed timestep is refined.
+    // External force/torque is constant for this segment and consumed below.
+    const externalAcceleration = 1 / ball.mass;
+    const start = this.aerodynamics.accelerationFor(ball.velocity, ball.angularVelocity,
+      ball.mass, this.startAcceleration).addScaled(ball.force, externalAcceleration);
+    this.midpointVelocity.copy(ball.velocity).addScaled(start, dt * 0.5);
+    this.midpointSpin.copy(ball.angularVelocity).multiplyScalar(Math.exp(-this.tuning.angularDrag * dt * 0.5));
+    const middle = this.aerodynamics.accelerationFor(this.midpointVelocity, this.midpointSpin,
+      ball.mass, this.middleAcceleration).addScaled(ball.force, externalAcceleration);
+    ball.position.addScaled(this.midpointVelocity, dt);
+    ball.velocity.addScaled(middle, dt).clampMagnitude(this.tuning.maxBallSpeed);
     this.angularAcceleration.copy(ball.torque).divideScalar(BALL.inertia);
     ball.angularVelocity.addScaled(this.angularAcceleration, dt);
+    ball.angularVelocity.multiplyScalar(Math.exp(-this.tuning.angularDrag * dt));
     ball.angularVelocity.clampMagnitude(this.tuning.maxSpinRate);
     // Forces belong to this segment only. Continuous collision can integrate
     // several segments in one fixed step after a rebound.

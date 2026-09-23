@@ -10,6 +10,7 @@ import { MatchController } from "../game/MatchController";
 import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
+import { BallIntegrator } from "../physics/Integrator";
 import { resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
 import { BallState } from "../physics/State";
 import { BallPredictor } from "../physics/Predictor";
@@ -19,6 +20,7 @@ import { TableVisual } from "../render/Table";
 import { ArenaVisual } from "../render/Arena";
 import { createMaterialPalette } from "../render/ProceduralMaterials";
 import { getArena } from "../content/ArenaCatalog";
+import { ContactEffects } from "../render/ContactEffects";
 import * as THREE from "three";
 import { emptyInputFrame, mergeInputFrames } from "../input/InputMapper";
 
@@ -80,11 +82,41 @@ function testTableAndNet(): void {
   const vertical = world.fixedStep(1 / 120);
   assert(vertical.contacts.some((item) => item.surfaceId === "net-cord"),
     "a vertical drop must still hit the top tape");
+  ball.reset(new Vec3(world.net.width / 2, TABLE.top + 0.12, 0.15), new Vec3(0, 0, -35));
+  const post = world.fixedStep(1 / 120);
+  assert(post.contacts.some((item) => item.surfaceId === "net-post-right"),
+    "the fixed post must stop a fast ball at the outside of the net");
+  assert(ball.velocity.z > 0, "a post strike must reflect away from the post");
+  ball.reset(new Vec3(world.net.width / 2 + BALL.radius + 0.052, TABLE.top + 0.12, 0.15),
+    new Vec3(0, 0, -35));
+  const outsidePost = world.fixedStep(1 / 120);
+  assert(!outsidePost.contacts.some((item) => item.surfaceId.startsWith("net-post")),
+    "a ball beyond the post radius must miss it");
   ball.reset(new Vec3(0, 1.1, 0), new Vec3(0, 0, -8));
   ball.angularVelocity.set(220, 0, 0);
   const lift = new Aerodynamics(world.tuning).forces(ball).magnus.length();
   assert(lift > 0 && lift < ball.mass * 20,
     "ordinary spin should create bounded aerodynamic lift");
+}
+
+function testFlightConvergence(): void {
+  const world = new PhysicsWorld(new EventBus());
+  const integrator = new BallIntegrator(world.tuning);
+  const flight = (steps: number): BallState => {
+    const ball = new BallState().reset(new Vec3(0, 1.3, 1), new Vec3(4, 3.4, -10));
+    ball.angularVelocity.set(170, 85, -25);
+    for (let index = 0; index < steps; index += 1) integrator.integrate(ball, 0.3 / steps);
+    return ball;
+  };
+  const reference = flight(960);
+  const coarse = flight(18);
+  const fine = flight(72);
+  assert(fine.position.distanceTo(reference.position) < coarse.position.distanceTo(reference.position) * 0.25,
+    "midpoint aerodynamic integration must converge as the flight step shrinks");
+  assert(fine.position.distanceTo(reference.position) < 0.003,
+    "a 240 Hz ball trajectory must stay close to a refined reference");
+  assert(fine.angularVelocity.length() < 200,
+    "free-flight spin must decay without spontaneous energy gain");
 }
 
 function testContinuousContactAndSpin(): void {
@@ -339,9 +371,22 @@ function testModelConstruction(): void {
   arena.setProfile(getArena("national-arena"));
   assert(arena.group.getObjectByName("arena-side-stands")?.visible === true,
     "the national arena must enable its instanced side galleries");
+  assert(arena.dressing.national.visible && !arena.dressing.club.visible &&
+    arena.group.getObjectByName("ceiling-coffers") instanceof THREE.InstancedMesh,
+    "competition architecture and instanced ceiling panels must follow the venue");
+  arena.setProfile(getArena("night-court"));
+  assert(arena.dressing.night.visible && Boolean(arena.group.getObjectByName("night-portal")),
+    "the night venue must have its own architectural silhouette");
   assert(Boolean(arena.group.getObjectByName("arena-score-display")),
     "the court must show live match scores in the 3D arena");
   arena.updateScore(9, 10, 1, 1);
+  const effects = new ContactEffects();
+  effects.record(contact("table", "home"));
+  assert(effects.group.children.some((child) => child.visible),
+    "a real table impact must briefly show its contact cue");
+  effects.update(0.26);
+  assert(effects.group.children.every((child) => !child.visible),
+    "table contact cues must expire without accumulating visible objects");
   arena.dispose(); player.dispose(); racket.dispose(); table.dispose();
 }
 
@@ -357,6 +402,7 @@ export function runGameTests(): void {
   assert(pointer.swing === 1 && pointer.serve, "inactive pointer must not cancel a keyboard stroke or serve");
   testTableAndNet();
   testContinuousContactAndSpin();
+  testFlightConvergence();
   testForecastAndRestoration();
   testRallyScoring();
   testPlayableSimulation();

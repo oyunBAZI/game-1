@@ -24,10 +24,10 @@ Each ball step:
 
 1. copy the previous position;
 2. clear force and torque;
-3. add gravity, drag, and Magnus forces;
-4. integrate linear velocity and position;
-5. integrate angular velocity;
-6. sweep the trial motion against the moving racket, net mesh and cord, and the full finite tabletop (top, rounded edge, vertical apron);
+3. evaluate gravity, drag, and Magnus force at the start and midpoint of the segment;
+4. integrate linear position with midpoint velocity and integrate velocity with midpoint acceleration;
+5. integrate angular velocity with exponential air damping;
+6. sweep the trial motion against the moving racket, net mesh, cord and posts, and the full finite tabletop (top, rounded edge, vertical apron);
 7. resolve the earliest contact and integrate the unused fraction of the step, up to eight contacts;
 8. clamp impossible runaway values;
 9. restore the start position for render interpolation and emit contacts in impact order.
@@ -44,9 +44,9 @@ Magnus force is approximated from angular velocity cross linear velocity. Contac
 
 ## Table and net
 
-TableCollider solves first contact against the actual distance to the tabletop box. A broad expanded-box rejection keeps distant flights cheap; a closest-distance search removes false positives at corners. The normal distinguishes a legal top bounce, a playable top edge and a vertical apron or underside strike. The rules end the point on apron contact. NetCollider owns the mesh, a rounded top cord and a lightweight deformable node grid. A ball that clips the top cord can continue across the table; a legal receiver bounce after a net touch during service is a let and replays without a point. Presentation consumes node positions without deciding whether a ball is legal.
+TableCollider solves first contact against the actual distance to the tabletop box. A broad expanded-box rejection keeps distant flights cheap; a closest-distance search removes false positives at corners. The normal distinguishes a legal top bounce, a playable top edge and a vertical apron or underside strike. The rules end the point on apron contact. NetCollider owns the mesh, a rounded top cord, swept finite post capsules and a lightweight deformable node grid. The posts use a different rebound from the textile net. A ball that clips the top cord can continue across the table; a legal receiver bounce after a net touch during service is a let and replays without a point. Presentation consumes node positions without deciding whether a ball is legal.
 
-The AI trajectory predictor advances a separate PhysicsWorld with both rackets disabled. It therefore uses the same drag, Magnus, net and table responses as live play, while selecting an intercept after the bounce on its own half. Predictive trajectories and contact coefficients remain gameplay approximations, not measured equipment calibration.
+The AI trajectory predictor advances a separate PhysicsWorld with both rackets disabled. It therefore uses the same drag, Magnus, net and table responses as live play. When a prediction begins after the ball has bounced on the AI's half, the AI retains that historical contact so it chooses an intercept before the next bounce. Its paddle target is kept above the table surface. Predictive trajectories and contact coefficients remain gameplay approximations, not measured equipment calibration.
 
 ## Out and points
 

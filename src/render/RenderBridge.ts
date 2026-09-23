@@ -9,6 +9,7 @@ import { TableVisual } from "./Table";
 import { createMaterialPalette } from "./ProceduralMaterials";
 import { EnvironmentDetail } from "./EnvironmentDetail";
 import { PlayerVisual } from "./Player";
+import { ContactEffects } from "./ContactEffects";
 import { getArena } from "../content/ArenaCatalog";
 import type { GameSimulation } from "../game/GameSimulation";
 
@@ -22,6 +23,8 @@ export class RenderBridge {
   readonly paddles: Record<"home" | "away", PaddleVisual>;
   readonly environment: EnvironmentDetail;
   readonly players: Record<"home" | "away", PlayerVisual>;
+  readonly contacts = new ContactEffects();
+  private readonly unsubscribeContact: () => void;
   private readonly materials = createMaterialPalette();
   private currentArena = "";
 
@@ -49,6 +52,11 @@ export class RenderBridge {
     this.renderer.add(this.paddles.away.group);
     this.renderer.add(this.players.home.group);
     this.renderer.add(this.players.away.group);
+    this.renderer.add(this.contacts.group);
+    this.unsubscribeContact = simulation.events.on("physics:contact", (contact) => {
+      this.contacts.record(contact);
+      if (contact.kind === "paddle") this.camera.addShake(0.045);
+    });
     this.applyArena();
   }
 
@@ -65,6 +73,7 @@ export class RenderBridge {
     this.players.home.sync(state.players.home, state.paddles.home, alpha, state.time);
     this.players.away.sync(state.players.away, state.paddles.away, alpha, state.time);
     this.table.updateNet(this.simulation.world.net.positions());
+    this.contacts.update(dt);
     const score = this.simulation.match.scoreboard;
     this.arena.updateScore(score.points.home, score.points.away, score.games.home, score.games.away);
     this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
@@ -87,6 +96,7 @@ export class RenderBridge {
   }
 
   dispose(): void {
+    this.unsubscribeContact();
     this.arena.dispose();
     this.renderer.dispose();
   }

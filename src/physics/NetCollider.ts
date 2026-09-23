@@ -31,17 +31,21 @@ export class NetCollider {
 
   detect(ball: BallState): CollisionContact | null {
     const cord = this.detectCord(ball);
+    const leftPost = this.detectPost(ball, -this.width / 2);
+    const rightPost = this.detectPost(ball, this.width / 2);
+    const rigid = [cord, leftPost, rightPost].filter((hit): hit is CollisionContact => hit !== null)
+      .sort((a, b) => a.timeOfImpact - b.timeOfImpact)[0] ?? null;
     // A ball can fall vertically onto the tape even without crossing the net.
-    if (Math.abs(ball.velocity.z) < 1e-8) return cord;
+    if (Math.abs(ball.velocity.z) < 1e-8) return rigid;
     const sign = ball.velocity.z > 0 ? -1 : 1;
     const contactZ = sign * (TABLE.netThickness * 0.5 + ball.radius);
     const travel = ball.position.z - ball.previousPosition.z;
     const fraction = (contactZ - ball.previousPosition.z) / travel;
-    if (fraction < 0 || fraction > 1) return cord;
+    if (fraction < 0 || fraction > 1) return rigid;
     const center = ball.previousPosition.clone().lerp(ball.position, fraction);
     if (Math.abs(center.x) > this.width / 2 + ball.radius ||
-        center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius - 0.006) return cord;
-    if (cord && cord.timeOfImpact < fraction) return cord;
+        center.y < this.bottomY - ball.radius || center.y > this.topY + ball.radius - 0.006) return rigid;
+    if (rigid && rigid.timeOfImpact < fraction) return rigid;
     const normal = new Vec3(0, 0, sign);
     return {
       kind: "net",
@@ -51,6 +55,56 @@ export class NetCollider {
       penetration: 0,
       relativeSpeed: ball.velocity.length(),
       surfaceId: "net-mesh"
+    };
+  }
+
+  /** Swept sphere against the post's round body and capped ends. Its distance
+   * to a finite line segment is convex along the flight chord, so a minimum
+   * search followed by bisection catches fast glancing strikes. */
+  private detectPost(ball: BallState, x: number): CollisionContact | null {
+    const start = ball.previousPosition;
+    const end = ball.position;
+    const radius = ball.radius + 0.016;
+    if (Math.min(start.x, end.x) > x + radius || Math.max(start.x, end.x) < x - radius ||
+        Math.min(start.z, end.z) > radius || Math.max(start.z, end.z) < -radius ||
+        Math.min(start.y, end.y) > this.topY + 0.08 + radius ||
+        Math.max(start.y, end.y) < this.bottomY - radius) return null;
+    const center = new Vec3();
+    const closest = new Vec3();
+    const distanceSq = (t: number): number => {
+      center.copy(start).lerp(end, t);
+      closest.set(x, Math.max(this.bottomY, Math.min(this.topY + 0.08, center.y)), 0);
+      return center.distanceToSquared(closest);
+    };
+    if (distanceSq(0) <= radius * radius) return null;
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 20; i += 1) {
+      const third = (high - low) / 3;
+      if (distanceSq(low + third) < distanceSq(high - third)) high -= third;
+      else low += third;
+    }
+    const minimum = (low + high) / 2;
+    if (distanceSq(minimum) > radius * radius) return null;
+    low = 0;
+    high = minimum;
+    for (let i = 0; i < 24; i += 1) {
+      const middle = (low + high) / 2;
+      if (distanceSq(middle) <= radius * radius) high = middle;
+      else low = middle;
+    }
+    const fraction = high;
+    distanceSq(fraction);
+    const normal = center.clone().sub(closest).normalize();
+    if (end.clone().sub(start).dot(normal) >= 0) return null;
+    return {
+      kind: "net",
+      timeOfImpact: fraction,
+      point: center.subScaled(normal, ball.radius).toJSON(),
+      normal: normal.toJSON(),
+      penetration: 0,
+      relativeSpeed: -ball.velocity.dot(normal),
+      surfaceId: x < 0 ? "net-post-left" : "net-post-right"
     };
   }
 

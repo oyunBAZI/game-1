@@ -5,7 +5,7 @@ import type { DifficultyProfile, Side } from "../core/types";
 import { BallPredictor, type LandingPrediction } from "../physics/Predictor";
 import type { PhysicsTuning } from "../physics/constants";
 import type { BallState, PaddleState, PlayerState } from "../physics/State";
-import { TABLE } from "../physics/constants";
+import { BALL, TABLE } from "../physics/constants";
 
 export interface AIAction {
   move: Vec3;
@@ -69,7 +69,10 @@ export class AIBrain {
     this.prediction = this.predictor.predict(ball, 1.8, 1 / 120);
     const confidence = clamp(this.profile.predictionConfidence - this.profile.placementError * this.random.next(), 0, 1);
     const sign = this.side === "away" ? -1 : 1;
-    let bouncedOnOurHalf = false;
+    // Forecasts start at the current ball state. If the ball has already
+    // bounced on this half, the forecast cannot contain that past contact;
+    // looking only for a future bounce aims at the illegal *second* bounce.
+    let bouncedOnOurHalf = ball.lastContact === "table" && ball.position.z * sign > 0;
     const playable: LandingPrediction["points"] = [];
     for (const point of this.prediction.points) {
       if (point.bounced && point.position.z * sign > 0) {
@@ -80,13 +83,16 @@ export class AIBrain {
           point.position.y > TABLE.top + 0.02 && point.position.y < 1.5 &&
           point.position.z * sign > 0.25) playable.push(point);
     }
-    const intercept = playable.find((point) => point.position.z * sign >= 0.75) ?? playable.at(-1);
+    const intercept = playable.find((point) => point.position.z * sign >= 0.85) ?? playable.at(-1);
     const predicted = intercept?.position ?? this.prediction.position;
     const lateralError = this.random.signed() * this.profile.placementError;
     this.target.set(
       clamp(predicted.x + lateralError, -1.1, 1.1),
-      clamp(predicted.y + this.random.signed() * this.profile.placementError * 0.4, 0.62, 1.7),
-      clamp(predicted.z, this.side === "away" ? -1.72 : 0.34, this.side === "away" ? -0.34 : 1.72)
+      // Prepare the face above the tabletop at the forecast interception.
+      clamp(predicted.y + this.random.signed() * this.profile.placementError * 0.4,
+        TABLE.top + BALL.radius + 0.045, 1.7),
+      clamp(predicted.z + sign * 0.035,
+        this.side === "away" ? -1.72 : 0.34, this.side === "away" ? -0.34 : 1.72)
     );
     const move = this.target.clone().sub(player.position).setY(0).clampMagnitude(1);
     const reachable = this.target.distanceTo(paddle.position) < 1.15 + confidence * 0.35;

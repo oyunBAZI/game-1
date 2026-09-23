@@ -3,9 +3,11 @@ import { TABLE } from "../physics/constants";
 import type { MaterialPalette } from "./ProceduralMaterials";
 import type { ArenaProfile } from "../content/ArenaCatalog";
 import { createArenaSurface, type FloorFinish } from "./ArenaSurfaces";
+import { ArenaDressing } from "./ArenaDressing";
 
 export class ArenaVisual {
   readonly group = new THREE.Group();
+  readonly dressing = new ArenaDressing();
   private readonly signageTexture: THREE.CanvasTexture;
   private readonly signageCanvas: HTMLCanvasElement;
   private readonly scoreCanvas: HTMLCanvasElement;
@@ -30,6 +32,7 @@ export class ArenaVisual {
     this.wallMaterial = materials.wall.clone();
     this.addWalls();
     this.addArchitecture(materials);
+    this.group.add(this.dressing.group);
     this.addCourtMarkers(materials);
     this.addCeilingRig(materials);
     this.signageCanvas = document.createElement("canvas");
@@ -515,6 +518,7 @@ export class ArenaVisual {
   }
 
   setProfile(profile: ArenaProfile): void {
+    this.dressing.setProfile(profile);
     const floor = new THREE.Color(profile.floorColor);
     this.mainFloor.material.color.copy(floor);
     this.courtFloor.material.color.copy(floor).lerp(new THREE.Color(0x749ca6), 0.18);
@@ -588,6 +592,7 @@ export class ArenaVisual {
   }
 
   dispose(): void {
+    this.dressing.dispose();
     this.signageTexture.dispose();
     this.scoreTexture.dispose();
     for (const surfaces of this.floorFinishes.values()) surfaces.forEach((surface) => surface.dispose());

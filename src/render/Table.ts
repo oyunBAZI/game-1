@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { TABLE } from "../physics/constants";
 import type { MaterialPalette } from "./ProceduralMaterials";
 
@@ -13,7 +14,9 @@ export class TableVisual {
 
   constructor(private readonly materials: MaterialPalette) {
     this.group.name = "table-visual";
-    const topGeometry = new THREE.BoxGeometry(TABLE.width, TABLE.thickness, TABLE.length);
+    // A narrow bevel catches the overhead lights and matches the rounded
+    // contact envelope used by the swept sphere/table collider.
+    const topGeometry = new RoundedBoxGeometry(TABLE.width, TABLE.thickness, TABLE.length, 3, 0.003);
     this.top = new THREE.Mesh(topGeometry, materials.table);
     this.top.position.y = TABLE.top - TABLE.thickness / 2;
     this.top.castShadow = true;

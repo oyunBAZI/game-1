@@ -23,11 +23,16 @@ export class Aerodynamics {
   constructor(private readonly tuning: PhysicsTuning) {}
 
   forces(ball: BallState): AerodynamicSample {
-    const speed = ball.velocity.length();
-    const spinRate = ball.angularVelocity.length();
-    const drag = this.dragForce(ball.velocity, speed);
-    const magnus = this.magnusForce(ball.velocity, ball.angularVelocity);
-    this.gravity.set(0, this.tuning.gravity * ball.mass, 0);
+    return this.forcesFor(ball.velocity, ball.angularVelocity, ball.mass);
+  }
+
+  /** Evaluate the flight force at an intermediate velocity for midpoint integration. */
+  forcesFor(velocity: Vec3, angularVelocity: Vec3, mass: number): AerodynamicSample {
+    const speed = velocity.length();
+    const spinRate = angularVelocity.length();
+    const drag = this.dragForce(velocity, speed);
+    const magnus = this.magnusForce(velocity, angularVelocity);
+    this.gravity.set(0, this.tuning.gravity * mass, 0);
     this.total.copy(drag).add(magnus).add(this.gravity);
     return {
       drag: drag.clone(),
@@ -38,6 +43,15 @@ export class Aerodynamics {
       spinRate,
       reynoldsApproximation: speed * BALL.diameter * this.tuning.airDensity / 0.0000181
     };
+  }
+
+  /** The integrator's hot path writes into a caller-owned vector rather than
+   * allocating a diagnostics object for every forecast and fixed step. */
+  accelerationFor(velocity: Vec3, angularVelocity: Vec3, mass: number, output: Vec3): Vec3 {
+    output.copy(this.dragForce(velocity)).add(this.magnusForce(velocity, angularVelocity))
+      .divideScalar(mass);
+    output.y += this.tuning.gravity;
+    return output;
   }
 
   apply(ball: BallState, dt: number): AerodynamicSample {

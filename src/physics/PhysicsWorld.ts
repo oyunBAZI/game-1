@@ -179,8 +179,10 @@ export class PhysicsWorld {
       ball.lastHitTick = this.state.tick;
     } else if (hit.kind === "net") {
       const before = ball.velocity.clone();
-      resolveNetContact(ball, normal, this.tuning.netRestitution);
-      this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
+      resolveNetContact(ball, normal, contact.surfaceId.startsWith("net-post") ? 0.55 : this.tuning.netRestitution);
+      if (!contact.surfaceId.startsWith("net-post")) {
+        this.net.applyImpulse(Vec3.from(contact.point), before.sub(ball.velocity).multiplyScalar(ball.mass * 0.6));
+      }
       ball.lastContact = "net";
     } else {
       resolveTableBounce(ball, hit.normal, hit.surface === "top" ? this.tuning.table : {

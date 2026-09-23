@@ -25,6 +25,8 @@ The physics and rules layers do not import Three.js. This is the most important 
 5. RenderBridge interpolates authoritative simulation state for Three.js.
 6. GameHud, AudioBus, telemetry, and replay listeners react to events.
 
+ArenaDressing adds instanced ceiling and venue specific scene geometry to ArenaVisual. ContactEffects listens for authoritative table impacts through RenderBridge and fades a small pool of visual cues. Both are presentation only; neither changes contact timing or scoring.
+
 ## Authoritative state
 
 WorldState is the authoritative local simulation state. Rendering objects are projections. Never make a mesh position authoritative for a gameplay decision.

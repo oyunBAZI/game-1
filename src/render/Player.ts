@@ -18,6 +18,7 @@ export class PlayerVisual {
   private readonly soles: THREE.Mesh[] = [];
   private readonly knees: THREE.Mesh[] = [];
   private readonly socks: THREE.Mesh[] = [];
+  private readonly footShadows: THREE.Mesh[] = [];
   private readonly hand: THREE.Mesh;
   private readonly otherHand: THREE.Mesh;
   private readonly elbows: THREE.Mesh[] = [];
@@ -26,6 +27,7 @@ export class PlayerVisual {
   private readonly skinGrain: THREE.CanvasTexture;
   private readonly shirtMark: THREE.CanvasTexture;
   private readonly jerseyPrint: THREE.CanvasTexture;
+  private readonly groundShadow: THREE.CanvasTexture;
   private readonly forward: number;
 
   constructor(side: Side) {
@@ -35,6 +37,7 @@ export class PlayerVisual {
     this.skinGrain = createSkinTexture();
     this.shirtMark = createShirtMark(side);
     this.jerseyPrint = createJerseyTexture(side);
+    this.groundShadow = createGroundShadow();
     const jersey = new THREE.MeshPhysicalMaterial({
       color: 0xffffff, map: this.jerseyPrint,
       roughness: 0.84, sheen: 0.48, sheenRoughness: 0.9,
@@ -73,6 +76,14 @@ export class PlayerVisual {
     }
     const chest = add(new THREE.SphereGeometry(0.177, 18, 12), jersey, 0, 1.215, 0);
     chest.scale.set(1, 0.35, 0.72);
+    // Rounded shoulders preserve a human silhouette as the arm IK swings.
+    for (const x of [-0.17, 0.17]) {
+      const shoulderCap = add(new THREE.SphereGeometry(0.082, 16, 12), jersey, x, 1.254, 0);
+      shoulderCap.scale.set(1, 0.68, 0.84);
+      const sleeveCuff = add(new THREE.TorusGeometry(0.061, 0.005, 5, 20), stripe,
+        x > 0 ? 0.245 : -0.245, 1.204, 0);
+      sleeveCuff.rotation.z = Math.PI / 2;
+    }
     const collar = add(new THREE.TorusGeometry(0.076, 0.012, 6, 20), stripe, 0, 1.325, 0);
     collar.rotation.x = Math.PI / 2;
     const collarShadow = add(new THREE.TorusGeometry(0.061, 0.005, 6, 20), shorts, 0, 1.324, this.forward * 0.005);
@@ -170,6 +181,18 @@ export class PlayerVisual {
       this.soles.push(outsole);
       this.knees.push(knee);
       this.socks.push(sockBand);
+      const shadow = add(new THREE.PlaneGeometry(0.37, 0.54),
+        new THREE.MeshBasicMaterial({
+          map: this.groundShadow, transparent: true, opacity: 0.36,
+          depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+          toneMapped: false
+        }), x, 0.009, this.forward * 0.08);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.castShadow = false;
+      shadow.receiveShadow = false;
+      shadow.renderOrder = 2;
+      this.materials.push(shadow.material as THREE.Material);
+      this.footShadows.push(shadow);
     }
   }
 
@@ -216,6 +239,8 @@ export class PlayerVisual {
       this.socks[index].position.copy(ankle).setY(0.145);
       this.shoes[index].position.set(ankle.x, 0.045, ankle.z + this.forward * 0.05);
       this.soles[index].position.set(ankle.x, 0.018, ankle.z + this.forward * 0.05);
+      this.footShadows[index].position.set(ankle.x, 0.009, ankle.z + this.forward * 0.05);
+      (this.footShadows[index].material as THREE.MeshBasicMaterial).opacity = 0.36 - pace * 0.08;
     }
   }
 
@@ -250,7 +275,30 @@ export class PlayerVisual {
     this.skinGrain.dispose();
     this.shirtMark.dispose();
     this.jerseyPrint.dispose();
+    this.groundShadow.dispose();
   }
+}
+
+function createGroundShadow(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const image = context.createImageData(size, size);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const distance = Math.hypot((x - 31.5) / 31.5, (y - 31.5) / 31.5);
+        const index = (y * size + x) * 4;
+        image.data[index] = 8;
+        image.data[index + 1] = 18;
+        image.data[index + 2] = 23;
+        image.data[index + 3] = Math.round(220 * Math.max(0, 1 - distance) ** 2);
+      }
+    }
+    context.putImageData(image, 0, 0);
+  }
+  return new THREE.CanvasTexture(canvas);
 }
 
 /** Tapered cheeks and jaw read more naturally at the broadcast camera distance. */
