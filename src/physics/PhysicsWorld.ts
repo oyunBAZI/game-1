@@ -51,13 +51,23 @@ export class PhysicsWorld {
     this.state.paddles.away.position.set(0, 1, -1);
     for (const side of ["home", "away"] as Side[]) {
       this.state.paddles[side].previousPosition.copy(this.state.paddles[side].position);
+      this.state.paddles[side].normal.set(0, 0, side === "home" ? -1 : 1);
+      this.state.paddles[side].previousNormal.copy(this.state.paddles[side].normal);
       this.state.paddles[side].velocity.set(0, 0, 0);
       this.state.paddles[side].swingVelocity.set(0, 0, 0);
+      this.state.paddles[side].angularVelocity.set(0, 0, 0);
+      this.state.paddles[side].active = true;
       this.state.players[side].velocity.set(0, 0, 0);
+      this.state.players[side].energy = 1;
+      this.state.players[side].ready = true;
+      this.state.players[side].stance = "neutral";
       this.desiredSpin[side].set(0, 0, 0);
     }
     this.state.players.home.position.set(0, 0, 1.62);
     this.state.players.away.position.set(0, 0, -1.62);
+    for (const side of ["home", "away"] as Side[]) {
+      this.state.players[side].previousPosition.copy(this.state.players[side].position);
+    }
     this.net.reset();
     this.contacts.length = 0;
     this.lastContactTick.clear();
@@ -84,7 +94,8 @@ export class PhysicsWorld {
     controls?.();
     this.integrator.integratePlayers(world, dt);
     for (const paddle of [world.paddles.home, world.paddles.away]) {
-      paddle.velocity.copy(paddle.position).sub(paddle.previousPosition).divideScalar(dt).clampMagnitude(15);
+      paddle.updateKinematics(dt);
+      paddle.velocity.clampMagnitude(15);
     }
     this.net.step(dt);
     this.contacts.length = 0;
@@ -120,7 +131,7 @@ export class PhysicsWorld {
       ball.velocity.copy(startVelocity).lerp(ball.velocity, fraction);
       ball.angularVelocity.copy(startSpin).lerp(ball.angularVelocity, fraction);
       const globalTime = (elapsed + remaining * fraction) / dt;
-      this.resolveHit(hit);
+      this.resolveHit(hit, globalTime);
       hit.contact.timeOfImpact = globalTime;
       this.contacts.push(hit.contact);
       this.lastContactTick.set(hit.contact.surfaceId, this.state.tick);
@@ -155,14 +166,14 @@ export class PhysicsWorld {
     return earliest;
   }
 
-  private resolveHit(hit: WorldHit): void {
+  private resolveHit(hit: WorldHit, contactTime: number): void {
     const ball = this.state.ball;
     const contact = hit.contact;
     const normal = Vec3.from(contact.normal);
     if (hit.kind === "paddle") {
       const side = contact.side!;
       const paddle = this.state.paddles[side];
-      resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side]);
+      resolvePaddleContact(ball, paddle, this.tuning.rubber, this.desiredSpin[side], normal, contactTime);
       ball.lastContact = "paddle";
       ball.lastContactSide = side;
       ball.lastHitTick = this.state.tick;

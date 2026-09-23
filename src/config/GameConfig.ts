@@ -15,6 +15,7 @@ export interface PhysicsConfig {
 }
 
 export interface GraphicsConfig {
+  arenaId: string;
   antialias: boolean;
   shadows: boolean;
   shadowMapSize: number;
@@ -135,6 +136,7 @@ export function createDefaultConfig(): GameConfig {
       rubbers: RUBBER_DEFAULTS
     },
     graphics: {
+      arenaId: "national-arena",
       antialias: true,
       shadows: true,
       shadowMapSize: 2048,

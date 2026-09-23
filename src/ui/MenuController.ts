@@ -2,6 +2,7 @@ import type { EventBus } from "../core/EventBus";
 import type { GameSimulation } from "../game/GameSimulation";
 import type { ServeStyle } from "../game/ServeController";
 import { UI_THEME } from "./UiTheme";
+import { ARENA_CATALOG } from "../content/ArenaCatalog";
 
 export class MenuController {
   readonly root: HTMLDivElement;
@@ -45,6 +46,22 @@ export class MenuController {
     }
     serveStyle.addEventListener("change", () => this.simulation.match.setServeStyle(serveStyle.value as ServeStyle));
     serveLabel.append(serveStyle);
+    const arenaLabel = document.createElement("label");
+    arenaLabel.textContent = "Venue";
+    arenaLabel.style.cssText = serveLabel.style.cssText;
+    const arenaSelect = serveStyle.cloneNode(false) as HTMLSelectElement;
+    for (const arena of ARENA_CATALOG) {
+      const option = document.createElement("option");
+      option.value = arena.id;
+      option.textContent = arena.label;
+      arenaSelect.append(option);
+    }
+    arenaSelect.value = this.simulation.config.graphics.arenaId;
+    arenaSelect.addEventListener("change", () => {
+      this.simulation.config.graphics.arenaId = arenaSelect.value;
+      this.events.emit("ui:toast", { message: `Venue: ${arenaSelect.selectedOptions[0].text}`, level: "info" });
+    });
+    arenaLabel.append(arenaSelect);
     const start = this.button("Start session", () => this.start());
     const reset = this.button("Reset session", () => {
       this.simulation.restart();
@@ -53,7 +70,7 @@ export class MenuController {
     const hint = document.createElement("small");
     hint.textContent = "Press C to cycle cameras during play.";
     hint.style.color = UI_THEME.muted;
-    panel.append(this.title, subtitle, this.modeLabel, serveLabel, start, reset, hint);
+    panel.append(this.title, subtitle, this.modeLabel, serveLabel, arenaLabel, start, reset, hint);
     this.root.appendChild(panel);
     container.appendChild(this.root);
   }

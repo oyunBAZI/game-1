@@ -50,7 +50,7 @@ export class PaddleVisual {
   sync(state: PaddleState, alpha: number): void {
     const position = state.previousPosition.clone().lerp(state.position, alpha);
     this.group.position.set(position.x, position.y, position.z);
-    const normal = state.normal.clone().normalize();
+    const normal = state.previousNormal.clone().lerp(state.normal, alpha).normalize();
     const target = new THREE.Vector3(normal.x, normal.y, normal.z);
     this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, this.side === "home" ? -1 : 1), target);
   }

@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { BallVisual } from "./Ball";
 import { CameraRig } from "./CameraRig";
 import { ArenaVisual } from "./Arena";
@@ -8,6 +9,7 @@ import { TableVisual } from "./Table";
 import { createMaterialPalette } from "./ProceduralMaterials";
 import { EnvironmentDetail } from "./EnvironmentDetail";
 import { PlayerVisual } from "./Player";
+import { getArena } from "../content/ArenaCatalog";
 import type { GameSimulation } from "../game/GameSimulation";
 
 export class RenderBridge {
@@ -21,6 +23,7 @@ export class RenderBridge {
   readonly environment: EnvironmentDetail;
   readonly players: Record<"home" | "away", PlayerVisual>;
   private readonly materials = createMaterialPalette();
+  private currentArena = "";
 
   constructor(private readonly simulation: GameSimulation) {
     this.renderer = new GameRenderer(simulation.config.graphics);
@@ -46,6 +49,7 @@ export class RenderBridge {
     this.renderer.add(this.paddles.away.group);
     this.renderer.add(this.players.home.group);
     this.renderer.add(this.players.away.group);
+    this.applyArena();
   }
 
   mount(container: HTMLElement): void {
@@ -53,6 +57,7 @@ export class RenderBridge {
   }
 
   update(dt: number, alpha: number): void {
+    if (this.currentArena !== this.simulation.config.graphics.arenaId) this.applyArena();
     const state = this.simulation.world.state;
     this.ball.sync(state.ball, alpha, dt, this.simulation.config.graphics.showTrails);
     this.paddles.home.sync(state.paddles.home, alpha);
@@ -65,6 +70,16 @@ export class RenderBridge {
     this.renderer.renderer.toneMappingExposure = this.simulation.config.graphics.toneMappingExposure;
     this.camera.update(dt, state.ball, this.simulation.config.graphics.reducedMotion);
     this.renderer.render();
+  }
+
+  private applyArena(): void {
+    const profile = getArena(this.simulation.config.graphics.arenaId);
+    this.currentArena = this.simulation.config.graphics.arenaId;
+    this.arena.setProfile(profile);
+    this.lighting.setProfile(profile);
+    const background = new THREE.Color(profile.wallColor).multiplyScalar(0.48);
+    this.renderer.scene.background = background;
+    this.renderer.scene.fog = new THREE.Fog(background, profile.fogNear, profile.fogFar);
   }
 
   setCameraMode(mode: "competitive" | "broadcast" | "ball" | "free"): void {

@@ -1,44 +1,69 @@
 import { Vec3 } from "../core/Vec3";
 import { clamp } from "../core/MathUtils";
 import type { CollisionContact } from "../core/types";
-import { BALL, PADDLE } from "./constants";
-import { sweptSpherePlane } from "./CollisionPrimitives";
+import { PADDLE } from "./constants";
 import type { BallState, PaddleState } from "./State";
 
 export class PaddleCollider {
   detect(ball: BallState, paddle: PaddleState, startTime = 0, endTime = 1): CollisionContact | null {
     if (!paddle.active) return null;
-    // Sweep in the racket's moving frame. A stationary ball can be struck by a
-    // moving blade, and a tilted blade needs its own local face coordinates.
-    const startPaddle = paddle.previousPosition.clone().lerp(paddle.position, startTime);
-    const endPaddle = paddle.previousPosition.clone().lerp(paddle.position, endTime);
-    const relativeStart = ball.previousPosition.clone().sub(startPaddle);
-    const relativeEnd = ball.position.clone().sub(endPaddle);
-    const normal = paddle.normal.clone().normalize();
-    if (relativeEnd.clone().sub(relativeStart).dot(normal) >= -1e-8) return null;
-    const plane = sweptSpherePlane(relativeStart, relativeEnd, ball.radius, {
-      point: new Vec3(),
-      normal,
-      id: "paddle-" + paddle.side,
-      kind: "paddle"
-    });
-    if (!plane.hit) return null;
+    // Sample the signed distance to the *moving and rotating* face, then
+    // bisect its first crossing. A sweep against only the final normal misses
+    // genuine brush contacts and can invent hits while the racket opens.
+    const center = new Vec3();
+    const racket = new Vec3();
+    const normal = new Vec3();
+    const relative = new Vec3();
+    const sample = (fraction: number): number => {
+      const time = startTime + (endTime - startTime) * fraction;
+      center.copy(ball.previousPosition).lerp(ball.position, fraction);
+      racket.copy(paddle.previousPosition).lerp(paddle.position, time);
+      normal.copy(paddle.previousNormal).lerp(paddle.normal, time).normalize();
+      relative.copy(center).sub(racket);
+      return relative.dot(normal) - ball.radius;
+    };
+    let previous = sample(0);
+    // A ball already behind the blade cannot hit its playable front face.
+    if (previous < -ball.radius - 0.001) return null;
+    let timeOfImpact = -1;
+    const samples = 8;
+    for (let index = 1; index <= samples; index += 1) {
+      const fraction = index / samples;
+      const distance = sample(fraction);
+      if (previous >= -1e-6 && distance <= 0 && distance < previous - 1e-8) {
+        let low = (index - 1) / samples;
+        let high = fraction;
+        for (let iteration = 0; iteration < 16; iteration += 1) {
+          const middle = (low + high) / 2;
+          if (sample(middle) > 0) low = middle;
+          else high = middle;
+        }
+        timeOfImpact = previous <= 0 && index === 1 ? 0 : high;
+        break;
+      }
+      previous = distance;
+    }
+    if (timeOfImpact < 0) return null;
+    const globalTime = startTime + (endTime - startTime) * timeOfImpact;
+    const signedDistance = sample(timeOfImpact);
+    const relativeVelocity = ball.velocity.clone().sub(paddle.velocityAt(center, globalTime));
+    if (relativeVelocity.dot(normal) >= -1e-6) return null;
     const right = new Vec3(1, 0, 0).projectOnPlane(normal);
     if (right.lengthSq() < 1e-8) right.set(0, 0, 1).projectOnPlane(normal);
     right.normalize();
     const up = new Vec3().crossVectors(right, normal).normalize();
-    const local = plane.point;
+    const local = relative.addScaled(normal, -relative.dot(normal));
     const width = PADDLE.faceWidth * 0.5 + PADDLE.collisionPadding;
     const height = PADDLE.faceHeight * 0.5 + PADDLE.collisionPadding;
     if ((local.dot(right) / width) ** 2 + (local.dot(up) / height) ** 2 > 1) return null;
-    const point = local.clone().add(startPaddle.lerp(endPaddle, plane.time));
+    const point = racket.clone().add(local);
     return {
       kind: "paddle",
-      timeOfImpact: plane.time,
+      timeOfImpact,
       point: point.toJSON(),
-      normal: plane.normal.toJSON(),
-      penetration: plane.penetration,
-      relativeSpeed: ball.velocity.clone().sub(paddle.velocity).length(),
+      normal: normal.toJSON(),
+      penetration: Math.max(0, -signedDistance),
+      relativeSpeed: -relativeVelocity.dot(normal),
       surfaceId: "paddle-" + paddle.side,
       side: paddle.side
     };

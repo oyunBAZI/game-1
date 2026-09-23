@@ -112,6 +112,7 @@ export class PaddleState {
   previousPosition: Vec3;
   velocity = new Vec3();
   normal = new Vec3(0, 0, 1);
+  previousNormal = new Vec3(0, 0, 1);
   swingVelocity = new Vec3();
   angularVelocity = new Vec3();
   rotation = new Quat();
@@ -128,21 +129,30 @@ export class PaddleState {
     this.position = new Vec3(0, 1.0, z);
     this.previousPosition = this.position.clone();
     this.normal.set(0, 0, side === "home" ? -1 : 1);
+    this.previousNormal.copy(this.normal);
   }
 
   beginStep(): void {
     this.previousPosition.copy(this.position);
+    this.previousNormal.copy(this.normal);
     this.swingVelocity.set(0, 0, 0);
   }
 
   updateKinematics(dt: number): void {
     if (dt <= 0) return;
     this.velocity.copy(this.position).sub(this.previousPosition).divideScalar(dt);
+    const axis = new Vec3().crossVectors(this.previousNormal, this.normal);
+    const sinAngle = axis.length();
+    if (sinAngle > 1e-8) {
+      const angle = Math.atan2(sinAngle, this.previousNormal.dot(this.normal));
+      this.angularVelocity.copy(axis).multiplyScalar(Math.min(45, angle / dt) / sinAngle);
+    } else this.angularVelocity.set(0, 0, 0);
     // The controller supplies a separate stroke impulse; it must survive this update.
   }
 
-  velocityAt(point: Vec3): Vec3 {
-    const offset = point.clone().sub(this.position);
+  velocityAt(point: Vec3, fraction = 1): Vec3 {
+    const center = this.previousPosition.clone().lerp(this.position, fraction);
+    const offset = point.clone().sub(center);
     const rotational = new Vec3().crossVectors(this.angularVelocity, offset);
     return this.velocity.clone().add(this.swingVelocity).add(rotational);
   }
@@ -161,8 +171,11 @@ export class PaddleState {
 
   restore(snapshot: PaddleSnapshot): void {
     this.position.copy(snapshot.position);
+    this.previousPosition.copy(snapshot.position);
     this.velocity.copy(snapshot.velocity);
     this.normal.copy(snapshot.normal);
+    this.previousNormal.copy(snapshot.normal);
+    this.angularVelocity.set(0, 0, 0);
     this.swingVelocity.copy(snapshot.swingVelocity);
     this.contactRadius = snapshot.contactRadius;
     this.active = snapshot.active;

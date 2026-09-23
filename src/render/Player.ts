@@ -23,12 +23,16 @@ export class PlayerVisual {
   private readonly elbows: THREE.Mesh[] = [];
   private readonly materials: THREE.Material[];
   private readonly fabric: THREE.CanvasTexture;
+  private readonly skinGrain: THREE.CanvasTexture;
+  private readonly shirtMark: THREE.CanvasTexture;
   private readonly forward: number;
 
   constructor(side: Side) {
     this.group.name = side + "-athlete";
     this.forward = side === "home" ? -1 : 1;
     this.fabric = createFabricTexture();
+    this.skinGrain = createSkinTexture();
+    this.shirtMark = createShirtMark(side);
     const jersey = new THREE.MeshPhysicalMaterial({
       color: side === "home" ? 0x136e7e : 0xb03b37,
       roughness: 0.86, sheen: 0.36, sheenRoughness: 0.84,
@@ -36,7 +40,10 @@ export class PlayerVisual {
     });
     const stripe = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xe1c78b : 0xf1e3cb, roughness: 0.72 });
     const shorts = new THREE.MeshStandardMaterial({ color: 0x18242c, roughness: 0.92, bumpMap: this.fabric, bumpScale: 0.001 });
-    const skin = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xc18b65 : 0x9d654b, roughness: 0.85 });
+    const skin = new THREE.MeshStandardMaterial({
+      color: side === "home" ? 0xc18b65 : 0x9d654b,
+      roughness: 0.81, bumpMap: this.skinGrain, bumpScale: 0.00035
+    });
     const hair = new THREE.MeshStandardMaterial({ color: side === "home" ? 0x1c242a : 0x30231d, roughness: 0.96 });
     const shoe = new THREE.MeshStandardMaterial({ color: side === "home" ? 0xeee7d8 : 0x26313d, roughness: 0.65 });
     const sole = new THREE.MeshStandardMaterial({ color: 0xe2e2d8, roughness: 0.8 });
@@ -51,8 +58,17 @@ export class PlayerVisual {
       return mesh;
     };
 
-    this.torso = add(new THREE.CylinderGeometry(0.19, 0.132, 0.47, 24), jersey, 0, 1.08, 0);
-    this.torso.scale.z = 0.72;
+    this.torso = add(createTorsoGeometry(), jersey, 0, 1.08, 0);
+    this.torso.name = "athlete-torso";
+    const printed = new THREE.MeshStandardMaterial({ map: this.shirtMark, transparent: true, depthWrite: false, roughness: 0.9, side: THREE.DoubleSide });
+    this.materials.push(printed);
+    for (const z of [-0.125, 0.125]) {
+      const print = new THREE.Mesh(new THREE.PlaneGeometry(0.145, 0.145), printed);
+      print.position.set(0, 0.04, z);
+      if (z < 0) print.rotation.y = Math.PI;
+      print.renderOrder = 1;
+      this.torso.add(print);
+    }
     const chest = add(new THREE.SphereGeometry(0.177, 18, 12), jersey, 0, 1.215, 0);
     chest.scale.set(1, 0.35, 0.72);
     const collar = add(new THREE.TorusGeometry(0.076, 0.012, 6, 20), stripe, 0, 1.325, 0);
@@ -74,6 +90,8 @@ export class PlayerVisual {
     }
     const face = add(new THREE.SphereGeometry(0.105, 20, 16), skin, 0, 1.51, 0);
     face.scale.set(0.93, 1.06, 0.96);
+    const jaw = add(new THREE.SphereGeometry(0.081, 18, 12), skin, 0, 1.451, this.forward * 0.017);
+    jaw.scale.set(0.95, 0.67, 0.94);
     const cap = add(new THREE.SphereGeometry(0.109, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.48), hair, 0, 1.535, 0);
     cap.scale.z = 1.04;
     for (const [x, z, rotation] of [[-0.052, 0.048, 0.36], [0, 0.084, 0], [0.055, 0.05, -0.33]] as const) {
@@ -111,6 +129,12 @@ export class PlayerVisual {
     this.wristband = add(new THREE.CylinderGeometry(0.043, 0.043, 0.045, 14), stripe, 0, 0, 0);
     this.hand = add(new THREE.SphereGeometry(0.042, 12, 10), skin, 0, 0, 0);
     this.otherHand = add(new THREE.SphereGeometry(0.042, 12, 10), skin, 0, 0, 0);
+    for (let finger = 0; finger < 4; finger += 1) {
+      const digit = new THREE.Mesh(new THREE.CapsuleGeometry(0.007, 0.024, 3, 6), skin);
+      digit.position.set((finger - 1.5) * 0.016, -0.027, this.forward * 0.01);
+      digit.rotation.z = (finger - 1.5) * 0.11;
+      this.hand.add(digit);
+    }
     this.elbows.push(add(new THREE.SphereGeometry(0.044, 12, 10), skin, 0, 0, 0));
     this.elbows.push(add(new THREE.SphereGeometry(0.044, 12, 10), skin, 0, 0, 0));
     for (const x of [-0.088, 0.088]) {
@@ -145,7 +169,7 @@ export class PlayerVisual {
       paddle.previousPosition.z + (paddle.position.z - paddle.previousPosition.z) * alpha - position.z
     );
     const shoulder = new THREE.Vector3(0.205, 1.27, 0);
-    const elbow = shoulder.clone().lerp(hand, 0.48).add(new THREE.Vector3(0.11, -0.08, -this.forward * 0.06));
+    const elbow = this.solveElbow(shoulder, hand);
     this.placeSegment(this.upperArm, shoulder, elbow);
     this.placeSegment(this.forearm, elbow, hand);
     this.placeSegment(this.sleeve, shoulder, shoulder.clone().lerp(elbow, 0.48));
@@ -153,11 +177,12 @@ export class PlayerVisual {
     this.wristband.position.copy(wrist);
     this.wristband.quaternion.copy(this.forearm.quaternion);
     this.torso.rotation.z = Math.max(-0.12, Math.min(0.12, -hand.x * 0.09));
+    this.torso.rotation.x = Math.max(-0.08, Math.min(0.08, player.velocity.z * this.forward * 0.018));
     this.elbows[0].position.copy(elbow);
     this.hand.position.copy(hand);
     const otherShoulder = new THREE.Vector3(-0.205, 1.27, 0);
-    const otherElbow = new THREE.Vector3(-0.32, 1.03, -this.forward * 0.02);
-    const otherHand = new THREE.Vector3(-0.26, 0.90, this.forward * 0.13);
+    const otherElbow = new THREE.Vector3(-0.32, 1.03, -this.forward * (0.02 + player.velocity.z * 0.009));
+    const otherHand = new THREE.Vector3(-0.26, 0.90, this.forward * (0.13 + player.velocity.x * 0.025));
     this.placeSegment(this.leftArm, otherShoulder, otherElbow);
     this.placeSegment(this.leftForearm, otherElbow, otherHand);
     this.elbows[1].position.copy(otherElbow);
@@ -187,6 +212,20 @@ export class PlayerVisual {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
   }
 
+  private solveElbow(shoulder: THREE.Vector3, hand: THREE.Vector3): THREE.Vector3 {
+    const direction = hand.clone().sub(shoulder);
+    const reach = Math.max(0.001, direction.length());
+    direction.divideScalar(reach);
+    const upper = 0.335;
+    const lower = 0.305;
+    const constrainedReach = Math.min(reach, upper + lower - 0.001);
+    const along = (upper * upper - lower * lower + constrainedReach * constrainedReach) / (2 * constrainedReach);
+    const bend = new THREE.Vector3(0.42, -0.32, -this.forward * 0.27).projectOnPlane(direction).normalize();
+    const height = Math.sqrt(Math.max(0, upper * upper - along * along));
+    return shoulder.clone().addScaledVector(direction, reach > upper + lower ? reach * 0.52 : along)
+      .addScaledVector(bend, height);
+  }
+
   dispose(): void {
     this.group.traverse((object) => {
       const mesh = object as THREE.Mesh;
@@ -194,7 +233,81 @@ export class PlayerVisual {
     });
     for (const material of this.materials) material.dispose();
     this.fabric.dispose();
+    this.skinGrain.dispose();
+    this.shirtMark.dispose();
   }
+}
+
+/** Elliptical loft gives the shirt shoulders, ribcage and waist distinct mass. */
+function createTorsoGeometry(): THREE.BufferGeometry {
+  const rings = [
+    [-0.235, 0.13, 0.085], [-0.17, 0.145, 0.104], [-0.04, 0.155, 0.114],
+    [0.10, 0.18, 0.12], [0.19, 0.19, 0.105], [0.235, 0.155, 0.083]
+  ];
+  const segments = 24;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let row = 0; row < rings.length; row += 1) {
+    const [y, width, depth] = rings[row];
+    for (let column = 0; column <= segments; column += 1) {
+      const angle = column / segments * Math.PI * 2;
+      positions.push(Math.cos(angle) * width, y, Math.sin(angle) * depth);
+      uvs.push(column / segments, row / (rings.length - 1));
+      if (row < rings.length - 1 && column < segments) {
+        const a = row * (segments + 1) + column;
+        const b = a + 1;
+        const c = a + segments + 1;
+        indices.push(a, c, b, b, c, c + 1);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function createSkinTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const image = context.createImageData(size, size);
+    let seed = 82532;
+    for (let index = 0; index < image.data.length; index += 4) {
+      seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+      const value = 122 + (seed >>> 0) % 13;
+      image.data[index] = image.data[index + 1] = image.data[index + 2] = value;
+      image.data[index + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 3);
+  return texture;
+}
+
+function createShirtMark(side: Side): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.clearRect(0, 0, 256, 256);
+    context.fillStyle = "#f1e9d5";
+    context.textAlign = "center";
+    context.font = "bold 111px Arial, sans-serif";
+    context.fillText(side === "home" ? "01" : "02", 128, 148);
+    context.font = "bold 25px Arial, sans-serif";
+    context.fillText("ULTRA TOUR", 128, 190);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function createFabricTexture(): THREE.CanvasTexture {

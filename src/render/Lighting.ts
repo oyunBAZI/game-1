@@ -1,10 +1,12 @@
 import * as THREE from "three";
+import type { ArenaProfile } from "../content/ArenaCatalog";
 
 export class ArenaLighting {
   readonly group = new THREE.Group();
   readonly key: THREE.DirectionalLight;
   readonly fill: THREE.HemisphereLight;
   readonly rim: THREE.PointLight;
+  private readonly practicals: THREE.SpotLight[] = [];
 
   constructor(shadows = true, shadowMapSize = 2048) {
     this.group.name = "arena-lighting";
@@ -40,6 +42,20 @@ export class ArenaLighting {
       light.target.position.set(x * 0.15, 0, 0);
       this.group.add(light.target);
       this.group.add(light);
+      this.practicals.push(light);
+    }
+  }
+
+  setProfile(profile: ArenaProfile): void {
+    this.fill.color.setHex(profile.lightColor);
+    this.fill.intensity = profile.id === "night-court" ? 0.38 : 0.82;
+    this.key.color.setHex(profile.lightColor);
+    this.key.intensity = profile.lightIntensity * 0.6;
+    this.rim.color.setHex(profile.accentColor);
+    this.rim.intensity = profile.id === "night-court" ? 13 : 7;
+    for (const light of this.practicals) {
+      light.color.setHex(profile.lightColor);
+      light.intensity = profile.id === "training-lab" ? 6 : 10;
     }
   }
 

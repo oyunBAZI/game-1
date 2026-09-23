@@ -30,10 +30,11 @@ export function createMaterialPalette(): MaterialPalette {
   const floorGrain = grain.clone();
   floorGrain.repeat.set(62, 82);
   floorGrain.needsUpdate = true;
-  const tablePaint = createSurfaceTexture(256, [8, 82, 111], 5, 2);
+  const tablePaint = createSurfaceTexture(256, [20, 82, 111], 7, 2);
   tablePaint.repeat.set(2, 4);
-  const floorVinyl = createSurfaceTexture(256, [45, 76, 84], 9, 6);
+  const floorVinyl = createSurfaceTexture(256, [185, 194, 196], 11, 4);
   floorVinyl.repeat.set(8, 11);
+  const woodVeneer = createWoodVeneerTexture();
   const table = new THREE.MeshPhysicalMaterial({
     color: 0xffffff, map: tablePaint, roughness: 0.43, metalness: 0.02,
     clearcoat: 0.21, clearcoatRoughness: 0.52, bumpMap: grain, bumpScale: 0.00065
@@ -49,12 +50,43 @@ export function createMaterialPalette(): MaterialPalette {
     wall: standard(0x101d27, 0.78),
     net: standard(0x0c1519, 0.85),
     ball: new THREE.MeshPhysicalMaterial({ color: 0xfff5d8, roughness: 0.36, clearcoat: 0.2 }),
-    rubberRed: standard(0xb02433, 0.8),
-    rubberBlack: standard(0x151b22, 0.78),
-    wood: standard(0x915c37, 0.59),
+    rubberRed: new THREE.MeshPhysicalMaterial({ color: 0xb02433, roughness: 0.69, clearcoat: 0.1, bumpMap: grain, bumpScale: 0.00025 }),
+    rubberBlack: new THREE.MeshPhysicalMaterial({ color: 0x151b22, roughness: 0.71, clearcoat: 0.1, bumpMap: grain, bumpScale: 0.00025 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0xffffff, map: woodVeneer, roughness: 0.55, bumpMap: grain, bumpScale: 0.00045 }),
     metal: standard(0x88969d, 0.34, 0.68),
     accent: standard(0x54d6c7, 0.35, 0.2)
   };
+}
+
+/** Layered veneer with lengthwise fibres; generated locally and repeatable. */
+function createWoodVeneerTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const pixels = context.createImageData(size, size);
+    let seed = 4589241;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+        const fibre = Math.sin(x * 0.31 + Math.sin(y * 0.022) * 2.1) * 13 +
+          Math.sin(x * 0.092 + y * 0.018) * 9 + ((seed >>> 0) % 11) - 5;
+        const lamination = y % 64 < 2 ? -18 : 0;
+        const offset = (y * size + x) * 4;
+        pixels.data[offset] = 152 + fibre + lamination;
+        pixels.data[offset + 1] = 93 + fibre * 0.74 + lamination;
+        pixels.data[offset + 2] = 53 + fibre * 0.49 + lamination;
+        pixels.data[offset + 3] = 255;
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 /** Baked, seeded pigment variation; no network texture requests at runtime. */

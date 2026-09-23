@@ -10,13 +10,14 @@ import { MatchController } from "../game/MatchController";
 import { PhysicsWorld } from "../physics/PhysicsWorld";
 import { BALL, TABLE } from "../physics/constants";
 import { Aerodynamics } from "../physics/Aerodynamics";
-import { resolveTableBounce } from "../physics/ContactModels";
+import { resolvePaddleContact, resolveTableBounce } from "../physics/ContactModels";
 import { BallState } from "../physics/State";
 import { PlayerVisual } from "../render/Player";
 import { PaddleVisual } from "../render/Paddle";
 import { TableVisual } from "../render/Table";
 import { ArenaVisual } from "../render/Arena";
 import { createMaterialPalette } from "../render/ProceduralMaterials";
+import { getArena } from "../content/ArenaCatalog";
 import * as THREE from "three";
 import { emptyInputFrame, mergeInputFrames } from "../input/InputMapper";
 
@@ -102,6 +103,35 @@ function testContinuousContactAndSpin(): void {
     "a moving, angled racket must strike a near stationary ball");
   assert(moving.state.ball.velocity.z < -1 && moving.state.ball.velocity.x > 0,
     "the racket's face angle must steer its outgoing ball");
+
+  const rotating = new PhysicsWorld(new EventBus());
+  rotating.state.ball.reset(new Vec3(0.05, 1, 0.95), new Vec3());
+  const rotationHit = rotating.fixedStep(1 / 120, () => {
+    rotating.state.paddles.home.normal.set(-0.6, 0, -0.8);
+  });
+  assert(rotationHit.contacts.some((hit) => hit.kind === "paddle"),
+    "a rotating face must sweep into a stationary ball");
+  const opening = new PhysicsWorld(new EventBus());
+  opening.state.ball.reset(new Vec3(-0.05, 1, 0.95), new Vec3());
+  const openingStep = opening.fixedStep(1 / 120, () => {
+    opening.state.paddles.home.normal.set(-0.6, 0, -0.8);
+  });
+  assert(!openingStep.contacts.some((hit) => hit.kind === "paddle"),
+    "an opening racket must not invent a collision");
+
+  const racket = moving.state.paddles.home;
+  racket.position.set(0, 1, 1);
+  racket.previousPosition.copy(racket.position);
+  racket.normal.set(0, 0, -1);
+  racket.angularVelocity.set(0, 0, 0);
+  racket.velocity.set(0, 0, 0);
+  racket.swingVelocity.set(0, 0, 0);
+  const brushed = new BallState().reset(new Vec3(0, 1, 0.98), new Vec3(0, 0, 4));
+  const frictionless = brushed.clone();
+  resolvePaddleContact(brushed, racket, world.tuning.rubber, new Vec3(240, 0, 0));
+  resolvePaddleContact(frictionless, racket, { ...world.tuning.rubber, friction: 0 }, new Vec3(240, 0, 0));
+  assert(brushed.angularVelocity.length() > 1 && frictionless.angularVelocity.length() < 1e-6,
+    "brushing spin must come from a friction impulse, not an unconditional spin bonus");
 
   const table = world.tuning.table;
   const backspin = new BallState().reset(new Vec3(), new Vec3(0, -3, -5));
@@ -242,10 +272,17 @@ function testModelConstruction(): void {
     "racket must have a shaped laminated blade");
   const player = new PlayerVisual("home");
   player.sync(world.state.players.home, world.state.paddles.home, 1, 0);
-  assert(player.group.children.length >= 12, "athlete rig must contain body and articulated limbs");
+  assert(player.group.children.length >= 12 && Boolean(player.group.getObjectByName("athlete-torso")),
+    "athlete rig must contain a sculpted torso and articulated limbs");
   const arena = new ArenaVisual(materials);
-  assert(arena.group.children.some((child) => child instanceof THREE.InstancedMesh),
+  let instancedSeats = false;
+  arena.group.traverse((child) => { instancedSeats ||= child instanceof THREE.InstancedMesh; });
+  assert(instancedSeats,
     "arena seating must use an instanced model");
+  assert(Boolean(arena.group.getObjectByName("broadcast-camera")),
+    "arena must include broadcast production detail");
+  arena.setProfile(getArena("training-lab"));
+  arena.setProfile(getArena("national-arena"));
   assert(Boolean(arena.group.getObjectByName("arena-score-display")),
     "the court must show live match scores in the 3D arena");
   arena.updateScore(9, 10, 1, 1);

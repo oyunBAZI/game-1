@@ -66,15 +66,17 @@ export function resolvePaddleContact(
   ball: BallState,
   paddle: PaddleState,
   rubber: RubberProfile,
-  desiredSpin: Vec3
+  desiredSpin: Vec3,
+  contactNormal = paddle.normal,
+  contactTime = 1
 ): ContactResponse {
   const before = ball.velocity.clone();
   const spinBefore = ball.angularVelocity.clone();
   const energyBefore = kineticEnergy(ball);
-  const contactNormal = paddle.normal.clone().normalize();
-  const paddleVelocity = paddle.velocityAt(ball.position);
+  const normal = contactNormal.clone().normalize();
+  const paddleVelocity = paddle.velocityAt(ball.position, contactTime);
   const relative = ball.velocity.clone().sub(paddleVelocity);
-  const approach = relative.dot(contactNormal);
+  const approach = relative.dot(normal);
   if (approach > 0) {
     return {
       velocityBefore: before,
@@ -88,20 +90,24 @@ export function resolvePaddleContact(
     };
   }
   const normalImpulse = -(1 + rubber.restitution) * approach * ball.mass;
-  ball.velocity.addScaled(contactNormal, normalImpulse / ball.mass);
-  const arm = contactNormal.clone().multiplyScalar(-BALL.radius);
-  const tangential = relative.clone().add(new Vec3().crossVectors(ball.angularVelocity, arm)).projectOnPlane(contactNormal);
+  ball.velocity.addScaled(normal, normalImpulse / ball.mass);
+  const arm = normal.clone().multiplyScalar(-ball.radius);
+  // Spin control represents brushing the rubber tangentially across the ball.
+  // Its effect is bounded by the rubber's friction impulse; it cannot simply
+  // add angular momentum to a ball without a contact force.
+  const brushVelocity = new Vec3().crossVectors(desiredSpin, arm).projectOnPlane(normal).clampMagnitude(4);
+  const tangential = relative.clone().add(new Vec3().crossVectors(ball.angularVelocity, arm))
+    .sub(brushVelocity).projectOnPlane(normal);
   const slip = tangential.length();
-  const desired = desiredSpin.clone().clampMagnitude(1000);
   const grip = clamp(rubber.friction * rubber.spinTransfer, 0, 1.5);
-  const effectiveMass = 1 / (1 / ball.mass + BALL.radius * BALL.radius / BALL.inertia);
+  const effectiveMass = 1 / (1 / ball.mass + ball.radius * ball.radius / BALL.inertia);
   const tangentImpulse = tangential.multiplyScalar(-Math.min(
     effectiveMass * rubber.spinTransfer,
     slip > 1e-8 ? grip * normalImpulse / slip : 0
   ));
   ball.velocity.addScaled(tangentImpulse, 1 / ball.mass);
   const contactTorque = new Vec3().crossVectors(arm, tangentImpulse).multiplyScalar(1 / BALL.inertia);
-  ball.angularVelocity.add(contactTorque).addScaled(desired, 0.35);
+  ball.angularVelocity.add(contactTorque);
   ball.velocity.clampMagnitude(55);
   ball.angularVelocity.clampMagnitude(1600);
   const energyAfter = kineticEnergy(ball);
